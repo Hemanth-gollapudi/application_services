@@ -1,0 +1,45 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:22.0.1
+    environment:
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+    command: start-dev
+    ports:
+      - "8080:8080"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+
+  app:
+    build:
+      context: ./services/tenant_user-service
+      dockerfile: Dockerfile
+    command: uvicorn tenant_user_service.main:app --host 0.0.0.0 --reload
+    env_file:
+      - ./.env
+    volumes:
+      - ./services/tenant_user-service:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - keycloak
+
+volumes:
+  postgres_data:
+  keycloak_data: 
