@@ -1,11 +1,11 @@
 pipeline {
     agent any
 
-    environment {
+    // environment {
         // Load environment variables from .env if needed
         // Uncomment the next line if you want to export .env variables
         // ENV_FILE = '.env'
-    }
+    // }
 
     stages {
         stage('Checkout') {
