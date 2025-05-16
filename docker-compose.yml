@@ -32,7 +32,7 @@ services:
       - keycloak_data:/opt/keycloak/data
 
   app:
-    image: application_services_app
+    image: application_services_app:${IMAGE_TAG-:latest}
     build:
       context: ./services/tenant_user-service
       dockerfile: Dockerfile

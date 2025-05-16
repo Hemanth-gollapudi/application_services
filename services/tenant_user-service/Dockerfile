@@ -14,6 +14,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Create a non-root user and switch to it
+RUN useradd -m appuser
+USER appuser
+
 # Ensure Python can find sources in src
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app/src
