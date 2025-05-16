@@ -16,6 +16,13 @@ pipeline {
         stage('Build and Push Docker Image') {
             steps {
                 script {
+                    // Validate IMAGE_TAG is not empty
+                    sh '''
+                    if [ -z "${IMAGE_TAG}" ]; then
+                      echo "ERROR: IMAGE_TAG parameter is empty. Please provide a valid image tag."
+                      exit 1
+                    fi
+                    '''
                     // Build the Docker image with the specified tag
                     sh "docker build -t application_services_app:${params.IMAGE_TAG} ./services/tenant_user-service"
                     // Optionally push to a registry (uncomment and set your registry)
