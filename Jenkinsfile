@@ -1,6 +1,10 @@
 pipeline {
     agent any
 
+    parameters {
+        string(name: 'ENVIRONMENT', defaultValue: 'dev', description: 'Kustomize overlay to deploy (dev or prod)')
+    }
+
     stages {
         stage('Clone Git repo') {
             steps {
@@ -19,20 +23,19 @@ pipeline {
         stage('Deploy to Kubernetes') {
             steps {
                 script {
-                    // Apply k8s manifests using kustomize for the dev environment
-                    sh 'kubectl apply -k k8s/overlays/dev'
+                    sh "kubectl apply -k k8s/overlays/${params.ENVIRONMENT}"
                 }
             }
         }
         stage('Verify Kubernetes Deployment') {
             steps {
                 script {
-                    // Get all deployments in the default namespace and check rollout status
+                    // Get all deployments in the platform namespace and check rollout status
                     sh '''
-                    for dep in $(kubectl get deployments -o jsonpath="{.items[*].metadata.name}" -n default); do
-                        kubectl rollout status deployment/$dep -n default
+                    for dep in $(kubectl get deployments -n platform -o jsonpath="{.items[*].metadata.name}"); do
+                        kubectl rollout status deployment/$dep -n platform
                     done
-                    kubectl get all -n default
+                    kubectl get all -n platform
                     '''
                 }
             }
