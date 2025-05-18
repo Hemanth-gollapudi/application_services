@@ -2,6 +2,25 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Create a new key pair
+resource "aws_key_pair" "app_key_pair" {
+  key_name   = "${var.project_name}-key"
+  public_key = tls_private_key.app_private_key.public_key_openssh
+}
+
+# Generate private key
+resource "tls_private_key" "app_private_key" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+# Store private key locally
+resource "local_file" "private_key" {
+  content         = tls_private_key.app_private_key.private_key_pem
+  filename        = "${path.module}/${var.project_name}-key.pem"
+  file_permission = "0400"
+}
+
 # Get default VPC
 data "aws_vpc" "default" {
   default = true
@@ -102,7 +121,7 @@ resource "aws_eip" "app_eip" {
 resource "aws_instance" "app_server" {
   ami           = var.ami_id
   instance_type = var.instance_type
-  key_name      = var.key_name
+  key_name      = aws_key_pair.app_key_pair.key_name
 
   subnet_id                   = data.aws_subnet.default.id
   vpc_security_group_ids      = [aws_security_group.app_sg.id]

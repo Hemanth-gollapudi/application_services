@@ -22,11 +22,6 @@ variable "instance_type" {
   default     = "t2.medium"
 }
 
-variable "key_name" {
-  description = "Name of the SSH key pair"
-  type        = string
-}
-
 variable "git_repo_url" {
   description = "URL of the Git repository"
   type        = string

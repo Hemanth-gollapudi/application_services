@@ -23,7 +23,12 @@ output "keycloak_url" {
   value       = "http://${aws_eip.app_eip.public_ip}:8084"
 }
 
+output "private_key_path" {
+  description = "Path to the private key file"
+  value       = local_file.private_key.filename
+}
+
 output "ssh_command" {
-  description = "Command to SSH into the instance"
-  value       = "ssh -i ${var.key_name}.pem ubuntu@${aws_eip.app_eip.public_ip}"
+  description = "SSH command to connect to the instance"
+  value       = "ssh -i ${local_file.private_key.filename} ubuntu@${aws_instance.app_server.public_ip}"
 } 
