@@ -105,7 +105,9 @@ pipeline {
                         bat """
                             docker version
                             echo "Building image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
-                            docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -f services/tenant_user-service/Dockerfile . || exit 1
+                            cd services/tenant_user-service
+                            docker build --no-cache -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -f Dockerfile ../.. || exit 1
+                            cd ../..
                         """
                     }
                 }

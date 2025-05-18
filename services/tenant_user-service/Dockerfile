@@ -3,19 +3,23 @@ FROM python:3.10-slim
 # Install system dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential \
-        libpq-dev \
+    build-essential \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Copy requirements first for better caching
+COPY services/tenant_user-service/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy the service code
+COPY services/tenant_user-service /app/
+COPY services/tenant_user-service/src /app/src/
 
 # Create a non-root user and switch to it
-RUN useradd -m appuser
+RUN useradd -m appuser && \
+    chown -R appuser:appuser /app
 USER appuser
 
 # Ensure Python can find sources in src
