@@ -31,6 +31,9 @@ pipeline {
         POSTGRES_DB = credentials('postgres-db-name')              // Jenkins credentials ID for DB name
         POSTGRES_USER = credentials('postgres-username')           // Jenkins credentials ID for DB username
         POSTGRES_PASSWORD = credentials('postgres-password')       // Jenkins credentials ID for DB password
+
+        // Python paths
+        PYTHONPATH = "${WORKSPACE}/services/tenant_user-service/src"
     }
 
     stages {
@@ -54,8 +57,11 @@ pipeline {
                         python -m venv venv
                         call venv\\Scripts\\activate.bat
                         python -m pip install --upgrade pip
-                        pip install -r services/tenant_user-service/requirements.txt
+                        cd services/tenant_user-service
+                        pip install -r requirements.txt
                         pip install pytest pytest-cov
+                        pip install -e .
+                        cd ../..
                     '''
                 }
             }
@@ -68,7 +74,8 @@ pipeline {
                     bat '''
                         call venv\\Scripts\\activate.bat
                         cd services/tenant_user-service
-                        python -m pytest tests/ -v
+                        set PYTHONPATH=%PYTHONPATH%;%CD%\\src
+                        python -m pytest tests/ -v --import-mode=append
                     '''
                 }
             }
@@ -79,7 +86,7 @@ pipeline {
                 script {
                     echo "Starting Docker service..."
                     bat '''
-                        net start com.docker.service
+                        net start com.docker.service || exit 0
                         timeout /t 30
                     '''
                 }
