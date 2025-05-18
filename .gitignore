@@ -1,8 +1,17 @@
 # Terraform
 .terraform/
+.terraform.lock.hcl
 *.tfstate
 *.tfstate.*
-.terraform.lock.hcl
+terraform.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+*.tfplan
+.terraformrc
+terraform.rc
+**/.terraform/*
+*.exe
 
 # Node modules
 node_modules/
