@@ -50,10 +50,9 @@ pipeline {
             steps {
                 script {
                     echo "Setting up Python environment..."
-                    // Create and activate virtual environment
-                    sh '''
+                    bat '''
                         python -m venv venv
-                        . venv/bin/activate
+                        call venv\\Scripts\\activate.bat
                         pip install -r services/tenant_user-service/requirements.txt
                     '''
                 }
@@ -64,8 +63,8 @@ pipeline {
             steps {
                 script {
                     echo "Running tests..."
-                    sh '''
-                        . venv/bin/activate
+                    bat '''
+                        call venv\\Scripts\\activate.bat
                         cd services/tenant_user-service
                         python -m pytest tests/
                     '''
@@ -77,10 +76,8 @@ pipeline {
             steps {
                 script {
                     echo "Building Docker images..."
-                    // Build the main application image
-                    sh """
-                        docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} \
-                            -f services/tenant_user-service/Dockerfile .
+                    bat """
+                        docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -f services/tenant_user-service/Dockerfile .
                     """
                 }
             }
@@ -90,8 +87,8 @@ pipeline {
             steps {
                 script {
                     echo "Pushing Docker images..."
-                    withDockerRegistry([credentialsId: 'docker-registry-credentials', url: "https://${DOCKER_REGISTRY}"]) {
-                        sh """
+                    withDockerRegistry([credentialsId: 'docker-registry-credentials', url: "https://index.docker.io/v1/"]) {
+                        bat """
                             docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
                         """
                     }
@@ -103,15 +100,8 @@ pipeline {
             steps {
                 script {
                     echo "Initializing Terraform..."
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                    ]) {
-                        dir('infrastructure/terraform') {
-                            sh '''
-                                terraform init -input=false
-                            '''
-                        }
+                    dir('infrastructure/terraform') {
+                        bat 'terraform init -input=false'
                     }
                 }
             }
@@ -121,15 +111,8 @@ pipeline {
             steps {
                 script {
                     echo "Planning Terraform changes..."
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                    ]) {
-                        dir('infrastructure/terraform') {
-                            sh '''
-                                terraform plan -out=tfplan -input=false
-                            '''
-                        }
+                    dir('infrastructure/terraform') {
+                        bat 'terraform plan -out=tfplan -input=false'
                     }
                 }
             }
@@ -139,15 +122,8 @@ pipeline {
             steps {
                 script {
                     echo "Applying Terraform changes..."
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                    ]) {
-                        dir('infrastructure/terraform') {
-                            sh '''
-                                terraform apply -auto-approve tfplan
-                            '''
-                        }
+                    dir('infrastructure/terraform') {
+                        bat 'terraform apply -auto-approve tfplan'
                     }
                 }
             }
@@ -158,7 +134,7 @@ pipeline {
                 script {
                     echo "Retrieving infrastructure details..."
                     dir('infrastructure/terraform') {
-                        def tfOutput = sh(
+                        def tfOutput = bat(
                             script: 'terraform output -json',
                             returnStdout: true
                         ).trim()
@@ -214,20 +190,20 @@ pipeline {
         failure {
             script {
                 echo "Pipeline failed! Destroying Terraform infrastructure..."
-                withCredentials([
-                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                ]) {
-                    dir('infrastructure/terraform') {
-                        sh 'terraform destroy -auto-approve'
-                    }
+                dir('infrastructure/terraform') {
+                    bat 'terraform destroy -auto-approve'
                 }
             }
         }
         always {
-            // Clean up resources
-            sh "docker system prune -f"
-            cleanWs()
+            script {
+                try {
+                    bat "docker system prune -f"
+                } catch (Exception e) {
+                    echo "Warning: Docker cleanup failed, but continuing..."
+                }
+                cleanWs()
+            }
         }
     }
 } 
