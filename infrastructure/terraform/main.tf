@@ -1,3 +1,21 @@
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+    tls = {
+      source  = "hashicorp/tls"
+      version = "~> 4.0"
+    }
+    local = {
+      source  = "hashicorp/local"
+      version = "~> 2.0"
+    }
+  }
+  required_version = ">= 1.2.0"
+}
+
 provider "aws" {
   region = var.aws_region
 }
@@ -18,7 +36,7 @@ resource "tls_private_key" "app_private_key" {
 resource "local_file" "private_key" {
   content         = tls_private_key.app_private_key.private_key_pem
   filename        = "${path.module}/${var.project_name}-key.pem"
-  file_permission = "0400"
+  file_permission = "0600"
 }
 
 # Get default VPC
@@ -109,12 +127,14 @@ resource "aws_security_group" "app_sg" {
 
 # Elastic IP for EC2 Instance
 resource "aws_eip" "app_eip" {
-  instance = aws_instance.app_server.id
-  domain   = "vpc"
+  domain     = "vpc"
+  instance   = aws_instance.app_server.id
 
   tags = {
     Name = "${var.project_name}-eip"
   }
+
+  depends_on = [aws_instance.app_server]
 }
 
 # EC2 Instance
