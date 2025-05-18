@@ -11,11 +11,10 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5434:5432"
+      - "5435:5432"
     healthcheck:
-      test: ["CMD", "pg_isready",
-         "-U", "${POSTGRES_USER}",
-         "-d", "${POSTGRES_DB}"]
+      test:
+        ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -32,10 +31,10 @@ services:
       - keycloak_data:/opt/keycloak/data
 
   app:
-    image: application_services_app:${IMAGE_TAG-:latest}
+    image: application_services_app:latest
     build:
-      context: ./services/tenant_user-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/tenant_user-service/Dockerfile
     command: uvicorn tenant_user_service.main:app --host 0.0.0.0 --reload
     env_file:
       - ./.env
@@ -43,11 +42,14 @@ services:
       - ./services/tenant_user-service:/app
     ports:
       - "8009:8000"
+    depends_on:
+      - postgres-tenant
+      - keycloak-tenant
 
   migrate:
     build:
-      context: ./services/tenant_user-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: services/tenant_user-service/Dockerfile
     command: alembic -c /app/alembic.ini upgrade head
     env_file:
       - ./.env
