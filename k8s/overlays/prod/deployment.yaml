@@ -1,0 +1,11 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: application-services-app
+  namespace: platform
+spec:
+  template:
+    spec:
+      containers:
+        - name: application-services-app
+          image: hemanthkumar21/application_services_app:latest

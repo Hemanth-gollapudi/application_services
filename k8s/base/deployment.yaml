@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: application-services-app
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: application-services-app
+  template:
+    metadata:
+      labels:
+        app: application-services-app
+    spec:
+      containers:
+        - name: application-services-app
+          image: hemanthkumar21/application_services_app:latest
+          ports:
+            - containerPort: 8009
+          env:
+            - name: ENV
+              value: "production"
