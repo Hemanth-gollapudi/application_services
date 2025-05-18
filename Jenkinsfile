@@ -118,9 +118,11 @@ pipeline {
             steps {
                 script {
                     echo "Pushing Docker images..."
-                    withDockerRegistry([credentialsId: 'docker-registry-credentials', url: "https://index.docker.io/v1/"]) {
+                    withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
                         bat """
+                            docker login -u %DOCKER_USERNAME% -p %DOCKER_PASSWORD%
                             docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                            docker logout
                         """
                     }
                 }
