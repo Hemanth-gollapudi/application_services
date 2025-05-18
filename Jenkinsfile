@@ -53,7 +53,9 @@ pipeline {
                     bat '''
                         python -m venv venv
                         call venv\\Scripts\\activate.bat
+                        python -m pip install --upgrade pip
                         pip install -r services/tenant_user-service/requirements.txt
+                        pip install pytest pytest-cov
                     '''
                 }
             }
@@ -66,7 +68,19 @@ pipeline {
                     bat '''
                         call venv\\Scripts\\activate.bat
                         cd services/tenant_user-service
-                        python -m pytest tests/
+                        python -m pytest tests/ -v
+                    '''
+                }
+            }
+        }
+
+        stage('Start Docker') {
+            steps {
+                script {
+                    echo "Starting Docker service..."
+                    bat '''
+                        net start com.docker.service
+                        timeout /t 30
                     '''
                 }
             }
