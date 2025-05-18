@@ -2,63 +2,23 @@ provider "aws" {
   region = var.aws_region
 }
 
-# VPC Configuration
-resource "aws_vpc" "app_vpc" {
-  cidr_block           = var.vpc_cidr
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = {
-    Name = "${var.project_name}-vpc"
-  }
+# Get default VPC
+data "aws_vpc" "default" {
+  default = true
 }
 
-# Internet Gateway
-resource "aws_internet_gateway" "app_igw" {
-  vpc_id = aws_vpc.app_vpc.id
-
-  tags = {
-    Name = "${var.project_name}-igw"
-  }
+# Get default subnet in the first AZ
+data "aws_subnet" "default" {
+  vpc_id            = data.aws_vpc.default.id
+  availability_zone = "${var.aws_region}a"
+  default_for_az    = true
 }
 
-# Public Subnet
-resource "aws_subnet" "public_subnet" {
-  vpc_id                  = aws_vpc.app_vpc.id
-  cidr_block              = var.public_subnet_cidr
-  availability_zone       = "${var.aws_region}a"
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "${var.project_name}-public-subnet"
-  }
-}
-
-# Route Table
-resource "aws_route_table" "public_rt" {
-  vpc_id = aws_vpc.app_vpc.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.app_igw.id
-  }
-
-  tags = {
-    Name = "${var.project_name}-public-rt"
-  }
-}
-
-# Route Table Association
-resource "aws_route_table_association" "public_rt_association" {
-  subnet_id      = aws_subnet.public_subnet.id
-  route_table_id = aws_route_table.public_rt.id
-}
-
-# Security Group
+# Security Group for Application
 resource "aws_security_group" "app_sg" {
   name        = "${var.project_name}-sg"
   description = "Security group for application services"
-  vpc_id      = aws_vpc.app_vpc.id
+  vpc_id      = data.aws_vpc.default.id
 
   # Allow HTTP
   ingress {
@@ -66,6 +26,7 @@ resource "aws_security_group" "app_sg" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTP traffic"
   }
 
   # Allow HTTPS
@@ -74,6 +35,7 @@ resource "aws_security_group" "app_sg" {
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow HTTPS traffic"
   }
 
   # Allow Application Port
@@ -82,6 +44,16 @@ resource "aws_security_group" "app_sg" {
     to_port     = 8009
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow Application traffic"
+  }
+
+  # Allow Keycloak Port
+  ingress {
+    from_port   = 8084
+    to_port     = 8084
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow Keycloak traffic"
   }
 
   # Allow SSH
@@ -90,6 +62,16 @@ resource "aws_security_group" "app_sg" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow SSH access"
+  }
+
+  # Allow PostgreSQL
+  ingress {
+    from_port   = 5434
+    to_port     = 5434
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow PostgreSQL traffic"
   }
 
   # Allow all outbound traffic
@@ -98,10 +80,21 @@ resource "aws_security_group" "app_sg" {
     to_port     = 0
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow all outbound traffic"
   }
 
   tags = {
     Name = "${var.project_name}-sg"
+  }
+}
+
+# Elastic IP for EC2 Instance
+resource "aws_eip" "app_eip" {
+  instance = aws_instance.app_server.id
+  domain   = "vpc"
+
+  tags = {
+    Name = "${var.project_name}-eip"
   }
 }
 
@@ -111,19 +104,27 @@ resource "aws_instance" "app_server" {
   instance_type = var.instance_type
   key_name      = var.key_name
 
-  subnet_id                   = aws_subnet.public_subnet.id
+  subnet_id                   = data.aws_subnet.default.id
   vpc_security_group_ids      = [aws_security_group.app_sg.id]
   associate_public_ip_address = true
 
   root_block_device {
     volume_size = 30
     volume_type = "gp3"
+    encrypted   = true
+
+    tags = {
+      Name = "${var.project_name}-root-volume"
+    }
   }
 
   user_data = <<-EOF
               #!/bin/bash
-              # Install Docker
+              # Update system packages
               apt-get update
+              apt-get upgrade -y
+
+              # Install Docker
               apt-get install -y docker.io
               systemctl start docker
               systemctl enable docker
@@ -149,6 +150,12 @@ resource "aws_instance" "app_server" {
               EOF
 
   tags = {
-    Name = "${var.project_name}-server"
+    Name    = "${var.project_name}-server"
+    Project = var.project_name
+  }
+
+  # Add this to ensure proper cleanup of the EIP when destroying
+  lifecycle {
+    create_before_destroy = true
   }
 } 
