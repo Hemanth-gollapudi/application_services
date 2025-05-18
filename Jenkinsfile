@@ -86,10 +86,13 @@ pipeline {
             steps {
                 script {
                     echo "Starting Docker service..."
-                    bat '''
-                        net start com.docker.service || exit 0
-                        timeout /t 30
-                    '''
+                    retry(3) {
+                        bat '''
+                            net start com.docker.service || echo "Docker service already running"
+                            ping -n 31 127.0.0.1 > nul
+                            docker info || exit 1
+                        '''
+                    }
                 }
             }
         }
@@ -98,9 +101,13 @@ pipeline {
             steps {
                 script {
                     echo "Building Docker images..."
-                    bat """
-                        docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -f services/tenant_user-service/Dockerfile .
-                    """
+                    retry(2) {
+                        bat """
+                            docker version
+                            echo "Building image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+                            docker build -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -f services/tenant_user-service/Dockerfile . || exit 1
+                        """
+                    }
                 }
             }
         }
