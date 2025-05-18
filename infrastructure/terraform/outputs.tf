@@ -30,5 +30,15 @@ output "private_key_path" {
 
 output "ssh_command" {
   description = "SSH command to connect to the instance"
-  value       = "ssh -i ${local_file.private_key.filename} ubuntu@${aws_instance.app_server.public_ip}"
+  value       = "ssh -i ${local_file.private_key.filename} ubuntu@${aws_eip.app_eip.public_ip}"
+}
+
+output "subnet_id" {
+  description = "ID of the subnet used"
+  value       = data.aws_subnet.selected.id
+}
+
+output "vpc_id" {
+  description = "ID of the VPC used"
+  value       = data.aws_vpc.default.id
 } 

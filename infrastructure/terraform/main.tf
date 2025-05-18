@@ -44,11 +44,20 @@ data "aws_vpc" "default" {
   default = true
 }
 
-# Get default subnet in the first AZ
-data "aws_subnet" "default" {
-  vpc_id            = data.aws_vpc.default.id
-  availability_zone = "${var.aws_region}a"
-  default_for_az    = true
+# Get default subnet
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+  filter {
+    name   = "default-for-az"
+    values = ["true"]
+  }
+}
+
+data "aws_subnet" "selected" {
+  id = tolist(data.aws_subnets.default.ids)[0]
 }
 
 # Security Group for Application
@@ -143,7 +152,7 @@ resource "aws_instance" "app_server" {
   instance_type = var.instance_type
   key_name      = aws_key_pair.app_key_pair.key_name
 
-  subnet_id                   = data.aws_subnet.default.id
+  subnet_id                   = data.aws_subnet.selected.id
   vpc_security_group_ids      = [aws_security_group.app_sg.id]
   associate_public_ip_address = true
 
