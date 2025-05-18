@@ -129,6 +129,20 @@ pipeline {
             }
         }
 
+        stage('Create AWS Key Pair') {
+            steps {
+                script {
+                    echo "Creating AWS key pair if it doesn't exist..."
+                    bat """
+                        aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} || (
+                            aws ec2 create-key-pair --key-name ${TF_VAR_key_name} --query 'KeyMaterial' --output text > ${TF_VAR_key_name}.pem
+                            echo "Key pair created successfully"
+                        )
+                    """
+                }
+            }
+        }
+
         stage('Initialize Terraform') {
             steps {
                 script {
@@ -192,7 +206,7 @@ pipeline {
                     // Apply Kubernetes configurations
                     sh """
                         kubectl apply -k k8s/overlays/prod
-                        kubectl rollout status deployment/tenant-user-service -n application-services
+                        kubectl rollout status deployment/tenant-user-service -n ${K8S_NAMESPACE}
                     """
                 }
             }
@@ -203,9 +217,8 @@ pipeline {
                 script {
                     echo "Performing health check..."
                     // Wait for the service to be ready
-                    sh """
-                        kubectl wait --for=condition=available --timeout=300s \
-                            deployment/tenant-user-service -n application-services
+                    bat """
+                        kubectl wait --for=condition=available --timeout=300s deployment/tenant-user-service -n ${K8S_NAMESPACE}
                     """
                 }
             }
@@ -222,10 +235,20 @@ pipeline {
         }
         failure {
             script {
-                echo "Pipeline failed! Destroying Terraform infrastructure..."
+                echo "Pipeline failed! Cleaning up resources..."
                 dir('infrastructure/terraform') {
-                    bat 'terraform destroy -auto-approve'
+                    // Only attempt to destroy if Terraform was initialized
+                    if (fileExists('.terraform')) {
+                        bat 'terraform destroy -auto-approve'
+                    }
                 }
+                // Clean up key pair if it exists
+                bat """
+                    aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} && (
+                        aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
+                        echo "Key pair deleted successfully"
+                    ) || echo "Key pair doesn't exist"
+                """
             }
         }
         always {
