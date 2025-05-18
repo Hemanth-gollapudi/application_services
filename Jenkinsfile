@@ -2,15 +2,35 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_REGISTRY = 'your-registry'  // Replace with your Docker registry
+        // Docker configuration
+        DOCKER_REGISTRY = 'hemanthkumar21'  
         IMAGE_NAME = 'application_services_app'
         IMAGE_TAG = "${BUILD_NUMBER}"
-        KUBECONFIG = credentials('kubeconfig-credentials-id')  // Replace with your Jenkins credential ID
-        GIT_REPO = 'your-git-repo-url'     // Replace with your Git repo URL
+        
+        // Git repository
+        GIT_REPO = 'https://github.com/Hemanth-gollapudi/application_services.git'
+        
+        // AWS credentials and configuration
         AWS_ACCESS_KEY_ID = credentials('aws-access-key-id')
         AWS_SECRET_ACCESS_KEY = credentials('aws-secret-access-key')
-        TF_VAR_key_name = 'your-key-pair-name'
+        AWS_DEFAULT_REGION = 'us-east-1'
+        
+        // Terraform variables
+        TF_VAR_key_name = 'application-services-key'
         TF_VAR_git_repo_url = "${GIT_REPO}"
+        
+        // Kubernetes configuration
+        KUBECONFIG = credentials('kubeconfig')
+        K8S_NAMESPACE = 'application-services'
+        
+        // Application configuration
+        APP_PORT = '8009'                                          // Application port
+        KEYCLOAK_PORT = '8084'                                     // Keycloak port
+        
+        // Database configuration (if needed)
+        POSTGRES_DB = credentials('postgres-db-name')              // Jenkins credentials ID for DB name
+        POSTGRES_USER = credentials('postgres-username')           // Jenkins credentials ID for DB username
+        POSTGRES_PASSWORD = credentials('postgres-password')       // Jenkins credentials ID for DB password
     }
 
     stages {
@@ -83,10 +103,15 @@ pipeline {
             steps {
                 script {
                     echo "Initializing Terraform..."
-                    dir('infrastructure/terraform') {
-                        sh '''
-                            terraform init -input=false
-                        '''
+                    withCredentials([
+                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    ]) {
+                        dir('infrastructure/terraform') {
+                            sh '''
+                                terraform init -input=false
+                            '''
+                        }
                     }
                 }
             }
@@ -96,10 +121,15 @@ pipeline {
             steps {
                 script {
                     echo "Planning Terraform changes..."
-                    dir('infrastructure/terraform') {
-                        sh '''
-                            terraform plan -out=tfplan -input=false
-                        '''
+                    withCredentials([
+                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    ]) {
+                        dir('infrastructure/terraform') {
+                            sh '''
+                                terraform plan -out=tfplan -input=false
+                            '''
+                        }
                     }
                 }
             }
@@ -109,10 +139,15 @@ pipeline {
             steps {
                 script {
                     echo "Applying Terraform changes..."
-                    dir('infrastructure/terraform') {
-                        sh '''
-                            terraform apply -auto-approve tfplan
-                        '''
+                    withCredentials([
+                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    ]) {
+                        dir('infrastructure/terraform') {
+                            sh '''
+                                terraform apply -auto-approve tfplan
+                            '''
+                        }
                     }
                 }
             }
@@ -179,8 +214,13 @@ pipeline {
         failure {
             script {
                 echo "Pipeline failed! Destroying Terraform infrastructure..."
-                dir('infrastructure/terraform') {
-                    sh 'terraform destroy -auto-approve'
+                withCredentials([
+                    string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                    string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                ]) {
+                    dir('infrastructure/terraform') {
+                        sh 'terraform destroy -auto-approve'
+                    }
                 }
             }
         }
