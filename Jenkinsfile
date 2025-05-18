@@ -186,7 +186,9 @@ pipeline {
                             returnStdout: true
                         ).trim()
                         
-                        def outputs = readJSON text: tfOutput
+                        // Extract only the JSON part from the output (handles Windows bat output)
+                        def jsonText = tfOutput.substring(tfOutput.indexOf('{'), tfOutput.lastIndexOf('}') + 1)
+                        def outputs = readJSON text: jsonText
                         env.EC2_PUBLIC_IP = outputs.instance_public_ip.value
                         env.APPLICATION_URL = outputs.application_url.value
                     }
