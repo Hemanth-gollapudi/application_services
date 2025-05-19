@@ -77,6 +77,7 @@ pipeline {
                             aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} 2>nul && (
                                 aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
                                 echo "Key pair deleted successfully"
+                                timeout /t 10 /nobreak
                             ) || echo "Key pair doesn't exist"
                         """
                         
@@ -85,10 +86,11 @@ pipeline {
                             aws ec2 describe-security-groups --group-names application-services-sg 2>nul && (
                                 aws ec2 delete-security-group --group-name application-services-sg
                                 echo "Security group deleted successfully"
+                                timeout /t 10 /nobreak
                             ) || echo "Security group doesn't exist"
                         """
                         
-                        // Clean up Terraform state
+                        // Clean up Terraform state and files
                         dir('infrastructure/terraform') {
                             bat '''
                                 if exist .terraform rmdir /s /q .terraform
@@ -96,8 +98,13 @@ pipeline {
                                 if exist *.tfstate del /f *.tfstate
                                 if exist *.tfstate.* del /f *.tfstate.*
                                 if exist tfplan del /f tfplan
+                                if exist application-services-key.pem del /f application-services-key.pem
                             '''
                         }
+
+                        // Wait for AWS to process deletions
+                        echo "Waiting for AWS to process resource deletions..."
+                        timeout /t 30 /nobreak
                     } catch (Exception e) {
                         echo "Warning: Cleanup encountered some issues: ${e.message}"
                         // Continue pipeline execution despite cleanup issues
@@ -191,9 +198,20 @@ pipeline {
                 script {
                     echo "Creating AWS key pair..."
                     try {
+                        // First ensure the key pair is deleted
+                        bat """
+                            aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} 2>nul && (
+                                aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
+                                echo "Existing key pair deleted"
+                                timeout /t 10 /nobreak
+                            ) || echo "No existing key pair found"
+                        """
+                        
+                        // Then create the new key pair
                         bat """
                             aws ec2 create-key-pair --key-name ${TF_VAR_key_name} --query 'KeyMaterial' --output text > ${TF_VAR_key_name}.pem
                             echo "Key pair created successfully"
+                            timeout /t 10 /nobreak
                         """
                     } catch (Exception e) {
                         error "Failed to create key pair: ${e.message}"
