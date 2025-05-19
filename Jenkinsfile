@@ -72,14 +72,6 @@ pipeline {
                 script {
                     echo "Cleaning up existing resources..."
                     try {
-                        // Clean up existing key pair
-                        bat """
-                            aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} 2>nul && (
-                                aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
-                                echo "Key pair deleted successfully"
-                                sleep 10
-                            ) || echo "Key pair doesn't exist"
-                        """
                         
                         // Clean up existing security group
                         bat """
@@ -334,12 +326,6 @@ pipeline {
                         }
                     }
                     
-                    bat """
-                        aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} 2>nul && (
-                            aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
-                            echo "Key pair deleted successfully"
-                        ) || echo "Key pair doesn't exist"
-                    """
                 } catch (Exception e) {
                     echo "Warning: Cleanup during failure encountered issues: ${e.message}"
                 }
