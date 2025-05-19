@@ -193,7 +193,16 @@ pipeline {
                         dir('infrastructure/terraform') {
                             // Initialize Terraform first
                             bat 'terraform init -input=false'
-                            
+
+                            // Ensure the key pair does not already exist in AWS
+                            bat '''
+                                aws ec2 describe-key-pairs --key-names application-services-key 2>nul && (
+                                    aws ec2 delete-key-pair --key-name application-services-key
+                                    echo "Existing key pair deleted"
+                                    timeout /t 5
+                                ) || echo "Key pair does not exist"
+                            '''
+
                             // Generate the key pair using Terraform
                             bat '''
                                 terraform apply -auto-approve -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair
