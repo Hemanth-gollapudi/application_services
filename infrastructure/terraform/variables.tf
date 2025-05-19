@@ -30,7 +30,7 @@ variable "git_repo_url" {
 variable "app_port" {
   description = "Port number for the application"
   type        = number
-  default     = 8080
+  default     = 3000
 }
 
 variable "keycloak_port" {
