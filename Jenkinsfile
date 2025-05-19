@@ -238,7 +238,7 @@ pipeline {
                 script {
                     echo "Planning Terraform changes..."
                     dir('infrastructure/terraform') {
-                        bat 'terraform plan -out=tfplan -input=false'
+                        bat 'terraform plan -out=tfplan -input=false -var="key_name=%KEY_NAME%"'
                     }
                 }
             }
