@@ -33,12 +33,17 @@ output "ssh_command" {
   value       = "ssh -i ${local_file.private_key.filename} ubuntu@${aws_eip.app_eip.public_ip}"
 }
 
-output "subnet_id" {
-  description = "ID of the subnet used"
-  value       = data.aws_subnet.selected.id
-}
-
 output "vpc_id" {
   description = "ID of the VPC used"
   value       = data.aws_vpc.default.id
+}
+
+output "subnet_id" {
+  description = "ID of the subnet used"
+  value       = tolist(data.aws_subnets.default.ids)[0]
+}
+
+output "availability_zones" {
+  description = "Available AZs in the region"
+  value       = data.aws_availability_zones.available.names
 } 

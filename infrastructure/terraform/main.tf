@@ -20,6 +20,24 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Get all availability zones
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
+# Get default VPC
+data "aws_vpc" "default" {
+  default = true
+}
+
+# Get all default subnets
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
 # Create a new key pair
 resource "aws_key_pair" "app_key_pair" {
   key_name   = "${var.project_name}-key"
@@ -37,27 +55,6 @@ resource "local_file" "private_key" {
   content         = tls_private_key.app_private_key.private_key_pem
   filename        = "${path.module}/${var.project_name}-key.pem"
   file_permission = "0600"
-}
-
-# Get default VPC
-data "aws_vpc" "default" {
-  default = true
-}
-
-# Get default subnet
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-  filter {
-    name   = "default-for-az"
-    values = ["true"]
-  }
-}
-
-data "aws_subnet" "selected" {
-  id = tolist(data.aws_subnets.default.ids)[0]
 }
 
 # Security Group for Application
@@ -134,25 +131,14 @@ resource "aws_security_group" "app_sg" {
   }
 }
 
-# Elastic IP for EC2 Instance
-resource "aws_eip" "app_eip" {
-  domain     = "vpc"
-  instance   = aws_instance.app_server.id
-
-  tags = {
-    Name = "${var.project_name}-eip"
-  }
-
-  depends_on = [aws_instance.app_server]
-}
-
 # EC2 Instance
 resource "aws_instance" "app_server" {
   ami           = var.ami_id
   instance_type = var.instance_type
   key_name      = aws_key_pair.app_key_pair.key_name
 
-  subnet_id                   = data.aws_subnet.selected.id
+  # Use the first available subnet
+  subnet_id                   = tolist(data.aws_subnets.default.ids)[0]
   vpc_security_group_ids      = [aws_security_group.app_sg.id]
   associate_public_ip_address = true
 
@@ -201,9 +187,15 @@ resource "aws_instance" "app_server" {
     Name    = "${var.project_name}-server"
     Project = var.project_name
   }
+}
 
-  # Add this to ensure proper cleanup of the EIP when destroying
-  lifecycle {
-    create_before_destroy = true
+# Elastic IP for EC2 Instance
+resource "aws_eip" "app_eip" {
+  domain     = "vpc"
+  instance   = aws_instance.app_server.id
+  depends_on = [aws_instance.app_server]
+
+  tags = {
+    Name = "${var.project_name}-eip"
   }
 } 
