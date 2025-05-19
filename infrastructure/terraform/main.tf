@@ -37,11 +37,19 @@ data "aws_subnets" "default" {
     values = [data.aws_vpc.default.id]
   }
 }
+# Select the first available subnet in the default VPC, or fail if none exist
+locals {
+  first_subnet_id = length(data.aws_subnets.default.ids) > 0 ? data.aws_subnets.default.ids[0] : ""
+}
+
+resource "null_resource" "validate_subnets" {
+  provisioner "local-exec" {
+    command = "if [ -z \"${local.first_subnet_id}\" ]; then echo 'ERROR: No subnets found in the default VPC. Please create at least one subnet.'; exit 1; fi"
+    interpreter = ["bash", "-c"]
+  }
+}
 
 # Get the first available subnet
-data "aws_subnet" "default" {
-  id = tolist(data.aws_subnets.default.ids)[0]
-}
 
 # Generate private key
 resource "tls_private_key" "app_private_key" {
@@ -154,7 +162,7 @@ resource "aws_security_group" "app_sg" {
 resource "aws_instance" "app_server" {
   ami           = var.ami_id
   instance_type = var.instance_type
-  subnet_id     = data.aws_subnet.default.id
+  subnet_id     = local.first_subnet_id
   key_name      = aws_key_pair.app_key_pair.key_name
 
   vpc_security_group_ids = [aws_security_group.app_sg.id]
