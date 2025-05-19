@@ -40,10 +40,10 @@ output "vpc_id" {
 
 output "subnet_id" {
   description = "ID of the subnet used"
-  value       = tolist(data.aws_subnets.default.ids)[0]
+  value       = aws_subnet.app_subnet.id
 }
 
-output "availability_zones" {
-  description = "Available AZs in the region"
-  value       = data.aws_availability_zones.available.names
+output "availability_zone" {
+  description = "Availability zone used"
+  value       = aws_subnet.app_subnet.availability_zone
 } 

@@ -30,11 +30,15 @@ data "aws_vpc" "default" {
   default = true
 }
 
-# Get all default subnets
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
+# Create a subnet if none exists
+resource "aws_subnet" "app_subnet" {
+  vpc_id                  = data.aws_vpc.default.id
+  cidr_block             = "172.31.0.0/20"
+  availability_zone      = data.aws_availability_zones.available.names[0]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "${var.project_name}-subnet"
   }
 }
 
@@ -137,8 +141,7 @@ resource "aws_instance" "app_server" {
   instance_type = var.instance_type
   key_name      = aws_key_pair.app_key_pair.key_name
 
-  # Use the first available subnet
-  subnet_id                   = tolist(data.aws_subnets.default.ids)[0]
+  subnet_id                   = aws_subnet.app_subnet.id
   vpc_security_group_ids      = [aws_security_group.app_sg.id]
   associate_public_ip_address = true
 
