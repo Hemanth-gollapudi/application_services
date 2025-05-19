@@ -212,10 +212,6 @@ pipeline {
                             '''
                             
                             // Set proper permissions for the key file
-                            bat '''
-                                icacls application-services-key.pem /inheritance:r
-                                icacls application-services-key.pem /grant:r "%USERNAME%:(R,W)"
-                            '''
                         }
                     } catch (Exception e) {
                         error "Failed to create key pair: ${e.message}"
