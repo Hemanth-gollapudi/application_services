@@ -77,7 +77,7 @@ pipeline {
                             aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} 2>nul && (
                                 aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
                                 echo "Key pair deleted successfully"
-                                timeout /t 10 /nobreak
+                                sleep 10
                             ) || echo "Key pair doesn't exist"
                         """
                         
@@ -86,7 +86,7 @@ pipeline {
                             aws ec2 describe-security-groups --group-names application-services-sg 2>nul && (
                                 aws ec2 delete-security-group --group-name application-services-sg
                                 echo "Security group deleted successfully"
-                                timeout /t 10 /nobreak
+                                sleep 10
                             ) || echo "Security group doesn't exist"
                         """
                         
@@ -104,7 +104,7 @@ pipeline {
 
                         // Wait for AWS to process deletions
                         echo "Waiting for AWS to process resource deletions..."
-                        timeout /t 30 /nobreak
+                        sleep 30
                     } catch (Exception e) {
                         echo "Warning: Cleanup encountered some issues: ${e.message}"
                         // Continue pipeline execution despite cleanup issues
@@ -203,7 +203,7 @@ pipeline {
                             aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} 2>nul && (
                                 aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
                                 echo "Existing key pair deleted"
-                                timeout /t 10 /nobreak
+                                sleep 10
                             ) || echo "No existing key pair found"
                         """
                         
@@ -211,7 +211,7 @@ pipeline {
                         bat """
                             aws ec2 create-key-pair --key-name ${TF_VAR_key_name} --query 'KeyMaterial' --output text > ${TF_VAR_key_name}.pem
                             echo "Key pair created successfully"
-                            timeout /t 10 /nobreak
+                            sleep 10
                         """
                     } catch (Exception e) {
                         error "Failed to create key pair: ${e.message}"
