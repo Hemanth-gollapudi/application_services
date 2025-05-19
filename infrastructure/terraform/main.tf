@@ -73,7 +73,7 @@ resource "aws_key_pair" "app_key_pair" {
 
 # Security Group for Application
 resource "aws_security_group" "app_sg" {
-  name        = "application-services-sg"
+  name_prefix = "application-services-sg-"
   description = "Security group for application services"
   vpc_id      = data.aws_vpc.default.id
 
@@ -141,7 +141,8 @@ resource "aws_security_group" "app_sg" {
   }
 
   tags = {
-    Name = "${var.project_name}-sg"
+    Name    = "${var.project_name}-sg"
+    Project = var.project_name
   }
 
   lifecycle {
