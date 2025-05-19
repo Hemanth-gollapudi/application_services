@@ -286,7 +286,7 @@ pipeline {
                     
                     // Apply Kubernetes configurations
                     sh """
-                        kubectl apply -k k8s/overlays/prod
+                        kubectl apply --insecure-skip-tls-verify=true -k k8s/overlays/prod
                         kubectl rollout status deployment/tenant-user-service -n ${K8S_NAMESPACE}
                     """
                 }
