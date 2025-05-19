@@ -7,7 +7,7 @@ pipeline {
         IMAGE_NAME = 'application_services_app'
         IMAGE_TAG = "${BUILD_NUMBER}"
         
-        // Git repository
+        // Git repository url
         GIT_REPO = 'https://github.com/Hemanth-gollapudi/application_services.git'
         
         // AWS credentials and configuration
