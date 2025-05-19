@@ -25,4 +25,16 @@ variable "instance_type" {
 variable "git_repo_url" {
   description = "URL of the Git repository"
   type        = string
+}
+
+variable "app_port" {
+  description = "Port number for the application"
+  type        = number
+  default     = 8080
+}
+
+variable "keycloak_port" {
+  description = "Port number for Keycloak"
+  type        = number
+  default     = 8081
 } 
