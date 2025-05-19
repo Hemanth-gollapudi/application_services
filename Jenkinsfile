@@ -49,27 +49,48 @@ pipeline {
             }
         }
 
+        stage('Verify AWS Configuration') {
+            steps {
+                script {
+                    echo "Verifying AWS configuration..."
+                    try {
+                        bat """
+                            aws configure list
+                            aws sts get-caller-identity
+                        """
+                    } catch (Exception e) {
+                        error "AWS configuration verification failed: ${e.message}"
+                    }
+                }
+            }
+        }
+
         stage('Cleanup Existing Resources') {
             steps {
                 script {
                     echo "Cleaning up existing resources..."
-                    // Clean up existing key pair
-                    bat """
-                        aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} && (
-                            aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
-                            echo "Key pair deleted successfully"
-                        ) || echo "Key pair doesn't exist"
-                    """
-                    
-                    // Clean up Terraform state
-                    dir('infrastructure/terraform') {
-                        bat '''
-                            if exist .terraform rmdir /s /q .terraform
-                            if exist .terraform.lock.hcl del /f .terraform.lock.hcl
-                            if exist *.tfstate del /f *.tfstate
-                            if exist *.tfstate.* del /f *.tfstate.*
-                            if exist tfplan del /f tfplan
-                        '''
+                    try {
+                        // Clean up existing key pair
+                        bat """
+                            aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} 2>nul && (
+                                aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
+                                echo "Key pair deleted successfully"
+                            ) || echo "Key pair doesn't exist"
+                        """
+                        
+                        // Clean up Terraform state
+                        dir('infrastructure/terraform') {
+                            bat '''
+                                if exist .terraform rmdir /s /q .terraform
+                                if exist .terraform.lock.hcl del /f .terraform.lock.hcl
+                                if exist *.tfstate del /f *.tfstate
+                                if exist *.tfstate.* del /f *.tfstate.*
+                                if exist tfplan del /f tfplan
+                            '''
+                        }
+                    } catch (Exception e) {
+                        echo "Warning: Cleanup encountered some issues: ${e.message}"
+                        // Continue pipeline execution despite cleanup issues
                     }
                 }
             }
@@ -158,13 +179,15 @@ pipeline {
         stage('Create AWS Key Pair') {
             steps {
                 script {
-                    echo "Creating AWS key pair if it doesn't exist..."
-                    bat """
-                        aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} || (
+                    echo "Creating AWS key pair..."
+                    try {
+                        bat """
                             aws ec2 create-key-pair --key-name ${TF_VAR_key_name} --query 'KeyMaterial' --output text > ${TF_VAR_key_name}.pem
                             echo "Key pair created successfully"
-                        )
-                    """
+                        """
+                    } catch (Exception e) {
+                        error "Failed to create key pair: ${e.message}"
+                    }
                 }
             }
         }
@@ -264,19 +287,22 @@ pipeline {
         failure {
             script {
                 echo "Pipeline failed! Cleaning up resources..."
-                dir('infrastructure/terraform') {
-                    // Only attempt to destroy if Terraform was initialized
-                    if (fileExists('.terraform')) {
-                        bat 'terraform destroy -auto-approve'
+                try {
+                    dir('infrastructure/terraform') {
+                        if (fileExists('.terraform')) {
+                            bat 'terraform destroy -auto-approve'
+                        }
                     }
+                    
+                    bat """
+                        aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} 2>nul && (
+                            aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
+                            echo "Key pair deleted successfully"
+                        ) || echo "Key pair doesn't exist"
+                    """
+                } catch (Exception e) {
+                    echo "Warning: Cleanup during failure encountered issues: ${e.message}"
                 }
-                // Clean up key pair if it exists
-                bat """
-                    aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} && (
-                        aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
-                        echo "Key pair deleted successfully"
-                    ) || echo "Key pair doesn't exist"
-                """
             }
         }
         always {
