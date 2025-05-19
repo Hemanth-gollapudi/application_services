@@ -58,8 +58,8 @@ resource "local_file" "private_key" {
 
 # Create a new key pair
 resource "aws_key_pair" "app_key_pair" {
-  key_name_prefix = "application-services-key-"
-  public_key      = tls_private_key.app_private_key.public_key_openssh
+  key_name   = "application-services-key"
+  public_key = tls_private_key.app_private_key.public_key_openssh
 
   tags = {
     Name    = "application-services-key"
