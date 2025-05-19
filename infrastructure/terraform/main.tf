@@ -43,18 +43,6 @@ data "aws_subnet" "default" {
   id = tolist(data.aws_subnets.default.ids)[0]
 }
 
-# Create a subnet if none exists
-resource "aws_subnet" "app_subnet" {
-  vpc_id                  = data.aws_vpc.default.id
-  cidr_block             = "172.31.0.0/20"
-  availability_zone      = data.aws_availability_zones.available.names[0]
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "${var.project_name}-subnet"
-  }
-}
-
 # Generate private key
 resource "tls_private_key" "app_private_key" {
   algorithm = "RSA"
@@ -104,8 +92,8 @@ resource "aws_security_group" "app_sg" {
 
   # Allow Application Port
   ingress {
-    from_port   = 8009
-    to_port     = 8009
+    from_port   = var.app_port
+    to_port     = var.app_port
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
     description = "Allow Application traffic"
@@ -113,8 +101,8 @@ resource "aws_security_group" "app_sg" {
 
   # Allow Keycloak Port
   ingress {
-    from_port   = 8084
-    to_port     = 8084
+    from_port   = var.keycloak_port
+    to_port     = var.keycloak_port
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
     description = "Allow Keycloak traffic"
@@ -158,8 +146,8 @@ resource "aws_security_group" "app_sg" {
 
 # EC2 Instance
 resource "aws_instance" "app_server" {
-  ami           = "ami-0c7217cdde317cfec"
-  instance_type = "t2.medium"
+  ami           = var.ami_id
+  instance_type = var.instance_type
   subnet_id     = data.aws_subnet.default.id
   key_name      = aws_key_pair.app_key_pair.key_name
 

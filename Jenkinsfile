@@ -18,14 +18,16 @@ pipeline {
         // Terraform variables
         TF_VAR_key_name = 'application-services-key'
         TF_VAR_git_repo_url = "${GIT_REPO}"
+        TF_VAR_app_port = '3000'
+        TF_VAR_keycloak_port = '8081'
         
         // Kubernetes configuration
         KUBECONFIG = credentials('kubeconfig')
         K8S_NAMESPACE = 'application-services'
         
         // Application configuration
-        APP_PORT = '8009'                                          // Application port
-        KEYCLOAK_PORT = '8084'                                     // Keycloak port
+        APP_PORT = '3000'                                          // Application port
+        KEYCLOAK_PORT = '8081'                                     // Keycloak port
         
         // Database configuration (if needed)
         POSTGRES_DB = credentials('postgres-db-name')              // Jenkins credentials ID for DB name
@@ -76,6 +78,14 @@ pipeline {
                                 aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
                                 echo "Key pair deleted successfully"
                             ) || echo "Key pair doesn't exist"
+                        """
+                        
+                        // Clean up existing security group
+                        bat """
+                            aws ec2 describe-security-groups --group-names application-services-sg 2>nul && (
+                                aws ec2 delete-security-group --group-name application-services-sg
+                                echo "Security group deleted successfully"
+                            ) || echo "Security group doesn't exist"
                         """
                         
                         // Clean up Terraform state
