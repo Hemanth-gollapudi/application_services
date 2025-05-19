@@ -40,10 +40,5 @@ output "vpc_id" {
 
 output "subnet_id" {
   description = "ID of the subnet"
-  value       = data.aws_subnet.default.id
+  value       = local.first_subnet_id
 }
-
-output "availability_zone" {
-  description = "Availability zone of the subnet"
-  value       = data.aws_subnet.default.availability_zone
-} 
