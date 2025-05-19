@@ -198,21 +198,33 @@ pipeline {
                 script {
                     echo "Creating AWS key pair..."
                     try {
-                        // First ensure the key pair is deleted
-                        bat """
-                            aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} 2>nul && (
-                                aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
-                                echo "Existing key pair deleted"
-                                sleep 10
-                            ) || echo "No existing key pair found"
-                        """
-                        
-                        // Then create the new key pair
-                        bat """
-                            aws ec2 create-key-pair --key-name ${TF_VAR_key_name} --query 'KeyMaterial' --output text > ${TF_VAR_key_name}.pem
-                            echo "Key pair created successfully"
-                            sleep 10
-                        """
+                        dir('infrastructure/terraform') {
+                            // Initialize Terraform first
+                            bat 'terraform init -input=false'
+                            
+                            // Generate the key pair using Terraform
+                            bat '''
+                                terraform apply -auto-approve -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair
+                                if errorlevel 1 (
+                                    echo "Failed to create key pair with Terraform"
+                                    exit 1
+                                )
+                            '''
+                            
+                            // Verify the key pair was created
+                            bat '''
+                                if not exist application-services-key.pem (
+                                    echo "Key pair file was not created"
+                                    exit 1
+                                )
+                            '''
+                            
+                            // Set proper permissions for the key file
+                            bat '''
+                                icacls application-services-key.pem /inheritance:r
+                                icacls application-services-key.pem /grant:r "%USERNAME%:(R,W)"
+                            '''
+                        }
                     } catch (Exception e) {
                         error "Failed to create key pair: ${e.message}"
                     }
