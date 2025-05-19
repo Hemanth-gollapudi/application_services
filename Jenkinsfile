@@ -49,6 +49,32 @@ pipeline {
             }
         }
 
+        stage('Cleanup Existing Resources') {
+            steps {
+                script {
+                    echo "Cleaning up existing resources..."
+                    // Clean up existing key pair
+                    bat """
+                        aws ec2 describe-key-pairs --key-names ${TF_VAR_key_name} && (
+                            aws ec2 delete-key-pair --key-name ${TF_VAR_key_name}
+                            echo "Key pair deleted successfully"
+                        ) || echo "Key pair doesn't exist"
+                    """
+                    
+                    // Clean up Terraform state
+                    dir('infrastructure/terraform') {
+                        bat '''
+                            if exist .terraform rmdir /s /q .terraform
+                            if exist .terraform.lock.hcl del /f .terraform.lock.hcl
+                            if exist *.tfstate del /f *.tfstate
+                            if exist *.tfstate.* del /f *.tfstate.*
+                            if exist tfplan del /f tfplan
+                        '''
+                    }
+                }
+            }
+        }
+
         stage('Setup Python Environment') {
             steps {
                 script {
