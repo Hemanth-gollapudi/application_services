@@ -52,17 +52,17 @@ resource "tls_private_key" "app_private_key" {
 # Store private key locally
 resource "local_file" "private_key" {
   content         = tls_private_key.app_private_key.private_key_pem
-  filename        = "${path.module}/application-services-key.pem"
+  filename        = "${path.module}/${var.key_name}.pem"
   file_permission = "0600"
 }
 
 # Create a new key pair
 resource "aws_key_pair" "app_key_pair" {
-  key_name   = "application-services-key"
+  key_name   = var.key_name
   public_key = tls_private_key.app_private_key.public_key_openssh
 
   tags = {
-    Name    = "application-services-key"
+    Name    = var.key_name
     Project = var.project_name
   }
 

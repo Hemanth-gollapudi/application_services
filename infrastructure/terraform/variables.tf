@@ -38,3 +38,7 @@ variable "keycloak_port" {
   type        = number
   default     = 8081
 } 
+variable "key_name" {
+  description = "Name for the AWS EC2 key pair"
+  type        = string
+}

@@ -16,7 +16,7 @@ pipeline {
         AWS_DEFAULT_REGION = 'us-east-1'
         
         // Terraform variables
-        TF_VAR_key_name = 'application-services-key'
+        KEY_NAME = "application-services-key-${BUILD_NUMBER}"
         TF_VAR_git_repo_url = "${GIT_REPO}"
         TF_VAR_app_port = '3000'
         TF_VAR_keycloak_port = '8081'
@@ -194,31 +194,24 @@ pipeline {
                             // Initialize Terraform first
                             bat 'terraform init -input=false'
 
-                            // Ensure the key pair does not already exist in AWS
-                            bat '''
-                                aws ec2 describe-key-pairs --key-names application-services-key 2>nul && (
-                                    aws ec2 delete-key-pair --key-name application-services-key
-                                    echo "Existing key pair deleted"
-                                    timeout /t 5
-                                ) || echo "Key pair does not exist"
-                            '''
-
-                            // Generate the key pair using Terraform
-                            bat '''
-                                terraform apply -auto-approve -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair
+                            // Generate the key pair using Terraform with unique key name
+                            bat """
+                                terraform apply -auto-approve -var="key_name=%KEY_NAME%" -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair
                                 if errorlevel 1 (
                                     echo "Failed to create key pair with Terraform"
                                     exit 1
                                 )
-                            '''
-                            
-                            // Verify the key pair was created
-                            bat '''
-                                if not exist application-services-key.pem (
+                            """
+
+                            // Verify the key pair file was created
+                            bat """
+                                if not exist %KEY_NAME%.pem (
                                     echo "Key pair file was not created"
                                     exit 1
                                 )
-                            '''
+                            """
+                            
+                            // Verify the key pair was created
                             
                             // Set proper permissions for the key file
                         }
