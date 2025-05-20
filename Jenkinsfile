@@ -284,13 +284,6 @@ pipeline {
                 script {
                     echo "Creating EKS cluster..."
                     try {
-                        // Clean up existing cluster if it exists
-                        bat """
-                            eksctl delete cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --wait || echo "No existing cluster to delete"
-                            echo "Waiting for resources to be cleaned up..."
-                            timeout /t 300 /nobreak
-                        """
-                        
                         // Create EKS cluster
                         bat """
                             eksctl create cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --nodegroup-name ${EKS_NODE_GROUP_NAME} --node-type ${EKS_NODE_TYPE} --nodes-min ${EKS_NODE_MIN} --nodes-max ${EKS_NODE_MAX} --nodes ${EKS_NODE_DESIRED} --managed --with-oidc --ssh-access --ssh-public-key ${KEY_NAME} --yes
@@ -400,11 +393,6 @@ pipeline {
             script {
                 echo "Pipeline failed! Cleaning up resources..."
                 try {
-                    // Delete EKS cluster
-                    bat """
-                        eksctl delete cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
-                    """
-                    
                     // Clean up Terraform resources
                     dir('infrastructure/terraform') {
                         if (fileExists('.terraform')) {
