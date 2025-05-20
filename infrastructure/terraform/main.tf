@@ -221,21 +221,31 @@ resource "aws_instance" "app_server" {
 
   user_data = base64encode(<<-EOF
               #!/bin/bash
+              # Update system packages
+              apt-get update -y
+              apt-get upgrade -y
+
+              # Install required packages
+              apt-get install -y apt-transport-https ca-certificates curl software-properties-common git
+
               # Install Docker
-              yum update -y
-              yum install -y docker
+              curl -fsSL https://get.docker.com -o get-docker.sh
+              sh get-docker.sh
               systemctl start docker
               systemctl enable docker
-              usermod -aG docker ec2-user
+              usermod -aG docker ubuntu
 
               # Install Docker Compose
               curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
               chmod +x /usr/local/bin/docker-compose
 
-              # Install kubectl
-              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-              chmod +x kubectl
-              mv kubectl /usr/local/bin/
+              # Clone the repository
+              cd /home/ubuntu
+              git clone https://github.com/Hemanth-gollapudi/application_services.git
+              cd application_services
+
+              # Start the application
+              docker-compose up --build -d
               EOF
   )
 
