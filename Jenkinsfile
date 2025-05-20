@@ -76,6 +76,16 @@ pipeline {
                 script {
                     echo "Cleaning up existing resources..."
                     try {
+                        // Clean up existing VPCs
+                        bat """
+                            aws ec2 describe-vpcs --filters "Name=tag:Name,Values=application-services-vpc" --query 'Vpcs[*].VpcId' --output text | foreach-object {
+                                aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$_" --query 'InternetGateways[*].InternetGatewayId' --output text | foreach-object {
+                                    aws ec2 detach-internet-gateway --internet-gateway-id $_ --vpc-id $_
+                                    aws ec2 delete-internet-gateway --internet-gateway-id $_
+                                }
+                                aws ec2 delete-vpc --vpc-id $_
+                            }
+                        """
                         
                         // Clean up existing security group
                         bat """
