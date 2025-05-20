@@ -25,31 +25,69 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
-# Get default VPC
-data "aws_vpc" "default" {
-  default = true
-}
+# Create a new VPC
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
 
-# Get existing subnets in the VPC
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
+  tags = {
+    Name    = "${var.project_name}-vpc"
+    Project = var.project_name
   }
 }
-# Select the first available subnet in the default VPC, or fail if none exist
+
+# Create public subnets in multiple AZs
+resource "aws_subnet" "public" {
+  count             = 2
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.${count.index + 1}.0/24"
+  availability_zone = data.aws_availability_zones.available.names[count.index]
+
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name    = "${var.project_name}-public-subnet-${count.index + 1}"
+    Project = var.project_name
+  }
+}
+
+# Create Internet Gateway
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name    = "${var.project_name}-igw"
+    Project = var.project_name
+  }
+}
+
+# Create route table
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = {
+    Name    = "${var.project_name}-public-rt"
+    Project = var.project_name
+  }
+}
+
+# Associate public subnets with route table
+resource "aws_route_table_association" "public" {
+  count          = 2
+  subnet_id      = aws_subnet.public[count.index].id
+  route_table_id = aws_route_table.public.id
+}
+
+# Update the local variable to use the first public subnet
 locals {
-  first_subnet_id = length(data.aws_subnets.default.ids) > 0 ? data.aws_subnets.default.ids[0] : ""
+  first_subnet_id = aws_subnet.public[0].id
 }
-
-resource "null_resource" "validate_subnets" {
-  provisioner "local-exec" {
-    command = "if [ -z \"${local.first_subnet_id}\" ]; then echo 'ERROR: No subnets found in the default VPC. Please create at least one subnet.'; exit 1; fi"
-    interpreter = ["bash", "-c"]
-  }
-}
-
-# Get the first available subnet
 
 # Generate private key
 resource "tls_private_key" "app_private_key" {
@@ -83,7 +121,7 @@ resource "aws_key_pair" "app_key_pair" {
 resource "aws_security_group" "app_sg" {
   name_prefix = "application-services-sg-"
   description = "Security group for application services"
-  vpc_id      = data.aws_vpc.default.id
+  vpc_id      = aws_vpc.main.id
 
   # Allow HTTP
   ingress {
@@ -211,4 +249,5 @@ resource "aws_eip" "app_eip" {
   tags = {
     Name = "application-services-eip"
   }
+} 
 } 

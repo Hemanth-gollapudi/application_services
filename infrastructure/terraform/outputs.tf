@@ -35,10 +35,15 @@ output "ssh_command" {
 
 output "vpc_id" {
   description = "ID of the VPC"
-  value       = data.aws_vpc.default.id
+  value       = aws_vpc.main.id
 }
 
-output "subnet_id" {
-  description = "ID of the subnet"
-  value       = local.first_subnet_id
+output "subnet_ids" {
+  description = "IDs of the public subnets"
+  value       = aws_subnet.public[*].id
+}
+
+output "public_subnet_cidrs" {
+  description = "CIDR blocks of the public subnets"
+  value       = aws_subnet.public[*].cidr_block
 }
