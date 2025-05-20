@@ -76,15 +76,43 @@ pipeline {
                 script {
                     echo "Cleaning up existing resources..."
                     try {
-                        // Clean up existing VPCs
+                        // Clean up existing VPCs and their dependencies
                         bat """
                             aws ec2 describe-vpcs --filters "Name=tag:Name,Values=application-services-vpc" --query 'Vpcs[*].VpcId' --output text | foreach-object {
-                                aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$_" --query 'InternetGateways[*].InternetGatewayId' --output text | foreach-object {
-                                    aws ec2 detach-internet-gateway --internet-gateway-id $_ --vpc-id $_
+                                $vpcId = $_
+                                
+                                # Delete Internet Gateways
+                                aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$vpcId" --query 'InternetGateways[*].InternetGatewayId' --output text | foreach-object {
+                                    aws ec2 detach-internet-gateway --internet-gateway-id $_ --vpc-id $vpcId
                                     aws ec2 delete-internet-gateway --internet-gateway-id $_
                                 }
-                                aws ec2 delete-vpc --vpc-id $_
+                                
+                                # Delete Subnets
+                                aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpcId" --query 'Subnets[*].SubnetId' --output text | foreach-object {
+                                    aws ec2 delete-subnet --subnet-id $_
+                                }
+                                
+                                # Delete Route Tables
+                                aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$vpcId" --query 'RouteTables[*].RouteTableId' --output text | foreach-object {
+                                    aws ec2 delete-route-table --route-table-id $_
+                                }
+                                
+                                # Delete Security Groups
+                                aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$vpcId" --query 'SecurityGroups[*].GroupId' --output text | foreach-object {
+                                    aws ec2 delete-security-group --group-id $_
+                                }
+                                
+                                # Delete Network ACLs
+                                aws ec2 describe-network-acls --filters "Name=vpc-id,Values=$vpcId" --query 'NetworkAcls[*].NetworkAclId' --output text | foreach-object {
+                                    aws ec2 delete-network-acl --network-acl-id $_
+                                }
+                                
+                                # Finally delete the VPC
+                                aws ec2 delete-vpc --vpc-id $vpcId
                             }
+                            
+                            echo "Waiting for resources to be cleaned up..."
+                            timeout /t 60 /nobreak
                         """
                         
                         // Clean up existing security group
