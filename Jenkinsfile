@@ -21,18 +21,22 @@ pipeline {
         TF_VAR_app_port = '3000'
         TF_VAR_keycloak_port = '8081'
         
-        // Kubernetes configuration
-        KUBECONFIG = credentials('kubeconfig')
-        K8S_NAMESPACE = 'application-services'
+        // EKS configuration
+        EKS_CLUSTER_NAME = "application-services-cluster"
+        EKS_NODE_GROUP_NAME = "application-services-nodes"
+        EKS_NODE_TYPE = "t3.medium"
+        EKS_NODE_MIN = "2"
+        EKS_NODE_MAX = "4"
+        EKS_NODE_DESIRED = "2"
         
         // Application configuration
-        APP_PORT = '3000'                                          // Application port
-        KEYCLOAK_PORT = '8081'                                     // Keycloak port
+        APP_PORT = '3000'
+        KEYCLOAK_PORT = '8081'
         
-        // Database configuration (if needed)
-        POSTGRES_DB = credentials('postgres-db-name')              // Jenkins credentials ID for DB name
-        POSTGRES_USER = credentials('postgres-username')           // Jenkins credentials ID for DB username
-        POSTGRES_PASSWORD = credentials('postgres-password')       // Jenkins credentials ID for DB password
+        // Database configuration
+        POSTGRES_DB = credentials('postgres-db-name')
+        POSTGRES_USER = credentials('postgres-username')
+        POSTGRES_PASSWORD = credentials('postgres-password')
 
         // Python paths
         PYTHONPATH = "${WORKSPACE}/services/tenant_user-service/src"
@@ -275,32 +279,115 @@ pipeline {
             }
         }
 
-        stage('Deploy to Kubernetes') {
+        stage('Create EKS Cluster') {
             steps {
                 script {
-                    echo "Deploying to Kubernetes..."
-                    // Update Kubernetes manifests with new image tag
-                    sh """
-                        sed -i 's|image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:.*|image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}|' k8s/overlays/prod/deployment.yaml
-                    """
-                    
-                    // Apply Kubernetes configurations
-                    sh """
-                        kubectl apply --insecure-skip-tls-verify=true -k k8s/overlays/prod
-                        kubectl rollout status deployment/tenant-user-service -n ${K8S_NAMESPACE}
-                    """
+                    echo "Creating EKS cluster..."
+                    try {
+                        // Create EKS cluster
+                        bat """
+                            eksctl create cluster \\
+                                --name ${EKS_CLUSTER_NAME} \\
+                                --region ${AWS_DEFAULT_REGION} \\
+                                --nodegroup-name ${EKS_NODE_GROUP_NAME} \\
+                                --node-type ${EKS_NODE_TYPE} \\
+                                --nodes-min ${EKS_NODE_MIN} \\
+                                --nodes-max ${EKS_NODE_MAX} \\
+                                --nodes ${EKS_NODE_DESIRED} \\
+                                --managed \\
+                                --with-oidc \\
+                                --ssh-access \\
+                                --ssh-public-key ${KEY_NAME} \\
+                                --yes
+                        """
+                        
+                        // Update kubeconfig
+                        bat """
+                            aws eks update-kubeconfig --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
+                        """
+                        
+                        // Create namespace
+                        bat """
+                            kubectl create namespace application-services --dry-run=client -o yaml | kubectl apply -f -
+                        """
+                        
+                        // Install AWS Load Balancer Controller
+                        bat """
+                            helm repo add eks https://aws.github.io/eks-charts
+                            helm repo update
+                            helm install aws-load-balancer-controller eks/aws-load-balancer-controller \\
+                                -n kube-system \\
+                                --set clusterName=${EKS_CLUSTER_NAME} \\
+                                --set serviceAccount.create=true \\
+                                --set serviceAccount.annotations."eks\\.amazonaws\\.com/role-arn"=arn:aws:iam::${AWS_ACCOUNT_ID}:role/aws-load-balancer-controller
+                        """
+                    } catch (Exception e) {
+                        error "Failed to create EKS cluster: ${e.message}"
+                    }
                 }
             }
         }
 
-        stage('Health Check') {
+        stage('Deploy to EKS') {
             steps {
                 script {
-                    echo "Performing health check..."
-                    // Wait for the service to be ready
-                    bat """
-                        kubectl wait --for=condition=available --timeout=300s deployment/tenant-user-service -n ${K8S_NAMESPACE}
-                    """
+                    echo "Deploying to EKS cluster..."
+                    try {
+                        // Create ConfigMap for environment variables
+                        bat """
+                            kubectl create configmap app-config \\
+                                --from-literal=POSTGRES_DB=${POSTGRES_DB} \\
+                                --from-literal=POSTGRES_USER=${POSTGRES_USER} \\
+                                --from-literal=POSTGRES_PASSWORD=${POSTGRES_PASSWORD} \\
+                                --namespace application-services \\
+                                --dry-run=client -o yaml | kubectl apply -f -
+                        """
+                        
+                        // Create Secret for Docker credentials
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                            bat """
+                                kubectl create secret docker-registry dockerhub-credentials \\
+                                    --docker-server=https://index.docker.io/v1/ \\
+                                    --docker-username=%DOCKER_USERNAME% \\
+                                    --docker-password=%DOCKER_PASSWORD% \\
+                                    --namespace application-services \\
+                                    --dry-run=client -o yaml | kubectl apply -f -
+                            """
+                        }
+                        
+                        // Deploy application
+                        bat """
+                            kubectl apply -f k8s/base/deployment.yaml -n application-services
+                            kubectl apply -f k8s/base/service.yaml -n application-services
+                            kubectl apply -f k8s/base/ingress.yaml -n application-services
+                        """
+                        
+                        // Wait for deployment
+                        bat """
+                            kubectl rollout status deployment/tenant-user-service -n application-services --timeout=300s
+                        """
+                    } catch (Exception e) {
+                        error "Failed to deploy to EKS: ${e.message}"
+                    }
+                }
+            }
+        }
+
+        stage('Get Load Balancer URL') {
+            steps {
+                script {
+                    echo "Getting Load Balancer URL..."
+                    try {
+                        def lbHostname = bat(
+                            script: 'kubectl get ingress -n application-services -o jsonpath="{.items[0].status.loadBalancer.ingress[0].hostname}"',
+                            returnStdout: true
+                        ).trim()
+                        
+                        env.APPLICATION_URL = "http://${lbHostname}"
+                        echo "Application is available at: ${env.APPLICATION_URL}"
+                    } catch (Exception e) {
+                        error "Failed to get Load Balancer URL: ${e.message}"
+                    }
                 }
             }
         }
@@ -311,19 +398,24 @@ pipeline {
             echo """
                 Pipeline completed successfully!
                 Application is available at: ${env.APPLICATION_URL}
-                EC2 Instance IP: ${env.EC2_PUBLIC_IP}
+                EKS Cluster Name: ${EKS_CLUSTER_NAME}
             """
         }
         failure {
             script {
                 echo "Pipeline failed! Cleaning up resources..."
                 try {
+                    // Delete EKS cluster
+                    bat """
+                        eksctl delete cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --yes
+                    """
+                    
+                    // Clean up Terraform resources
                     dir('infrastructure/terraform') {
                         if (fileExists('.terraform')) {
                             bat 'terraform destroy -auto-approve'
                         }
                     }
-                    
                 } catch (Exception e) {
                     echo "Warning: Cleanup during failure encountered issues: ${e.message}"
                 }
