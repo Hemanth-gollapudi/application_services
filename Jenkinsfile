@@ -396,7 +396,7 @@ pipeline {
                 try {
                     // Delete EKS cluster
                     bat """
-                        eksctl delete cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --yes
+                        eksctl delete cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
                     """
                     
                     // Clean up Terraform resources
