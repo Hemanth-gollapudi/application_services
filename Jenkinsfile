@@ -286,18 +286,7 @@ pipeline {
                     try {
                         // Create EKS cluster
                         bat """
-                            eksctl create cluster \\
-                                --name ${EKS_CLUSTER_NAME} \\
-                                --region ${AWS_DEFAULT_REGION} \\
-                                --nodegroup-name ${EKS_NODE_GROUP_NAME} \\
-                                --node-type ${EKS_NODE_TYPE} \\
-                                --nodes-min ${EKS_NODE_MIN} \\
-                                --nodes-max ${EKS_NODE_MAX} \\
-                                --nodes ${EKS_NODE_DESIRED} \\
-                                --managed \\
-                                --with-oidc \\
-                                --ssh-access \\
-                                --ssh-public-key ${KEY_NAME} \\
+                            eksctl create cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --nodegroup-name ${EKS_NODE_GROUP_NAME} --node-type ${EKS_NODE_TYPE} --nodes-min ${EKS_NODE_MIN} --nodes-max ${EKS_NODE_MAX} --nodes ${EKS_NODE_DESIRED} --managed --with-oidc --ssh-access --ssh-public-key ${KEY_NAME}
                                 --yes
                         """
                         
