@@ -249,5 +249,4 @@ resource "aws_eip" "app_eip" {
   tags = {
     Name = "application-services-eip"
   }
-} 
-} 
+}
