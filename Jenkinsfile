@@ -203,8 +203,17 @@ pipeline {
                         bat """
                             docker version
                             echo "Building image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+                            
+                            # Clean up any existing containers with the same name
+                            docker rm -f ${IMAGE_NAME} 2>nul || true
+                            
+                            # Build the image with proper context
                             cd services/tenant_user-service
-                            docker build --no-cache -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -f Dockerfile ../.. || exit 1
+                            docker build --no-cache -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -f Dockerfile . || exit 1
+                            
+                            # Verify the image was built
+                            docker images | findstr "${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" || exit 1
+                            
                             cd ../..
                         """
                     }
@@ -218,11 +227,53 @@ pipeline {
                     echo "Pushing Docker images..."
                     withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
                         bat """
-                            docker login -u %DOCKER_USERNAME% -p %DOCKER_PASSWORD%
-                            docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                            # Login to Docker Hub
+                            echo "Logging in to Docker Hub..."
+                            docker login -u %DOCKER_USERNAME% -p %DOCKER_PASSWORD% || exit 1
+                            
+                            # Push the image
+                            echo "Pushing image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}"
+                            docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
+                            
+                            # Also tag and push as latest
+                            echo "Tagging and pushing as latest..."
+                            docker tag ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
+                            docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
+                            
+                            # Logout from Docker Hub
                             docker logout
                         """
                     }
+                }
+            }
+        }
+
+        stage('Verify Docker Image') {
+            steps {
+                script {
+                    echo "Verifying Docker image..."
+                    bat """
+                        # Pull the image to verify it's accessible
+                        echo "Pulling image to verify accessibility..."
+                        docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
+                        
+                        # Run a test container
+                        echo "Running test container..."
+                        docker run -d -p 8009:8000 --name test-${IMAGE_NAME} ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
+                        
+                        # Wait for container to start
+                        timeout /t 10 /nobreak
+                        
+                        # Check container status
+                        docker ps | findstr "test-${IMAGE_NAME}" || exit 1
+                        
+                        # Check container logs
+                        echo "Container logs:"
+                        docker logs test-${IMAGE_NAME}
+                        
+                        # Clean up test container
+                        docker rm -f test-${IMAGE_NAME}
+                    """
                 }
             }
         }
