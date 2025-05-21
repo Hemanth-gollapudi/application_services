@@ -174,21 +174,14 @@ pipeline {
             }
         }
 
-        stage('Build Docker Images') {
+        stage('Build Docker Image') {
             steps {
                 script {
-                    echo "Building Docker images..."
+                    echo "Building Docker image with tag 'latest'..."
                     retry(2) {
                         bat """
-                            docker version
-                            echo Building image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
                             docker-compose build --no-cache app
-                            
-                            docker image inspect ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || exit 1
-                            
-                            docker images | findstr "${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}" || exit 1
-                            docker tag ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
-                            docker image inspect ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
+                            docker tag ${DOCKER_REGISTRY}/${IMAGE_NAME} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
                         """
                     }
                 }
@@ -317,11 +310,12 @@ pipeline {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
                     bat """
-                        ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ec2-user@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% %DOCKER_REGISTRY%/%IMAGE_NAME%:latest"
+                        ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ec2-user@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest"
                     """
                 }
             }
         }
+
         stage('Create EKS Cluster') {
             steps {
                 script {
