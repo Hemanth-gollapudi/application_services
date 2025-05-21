@@ -4,7 +4,7 @@ pipeline {
     environment {
         DOCKER_REGISTRY = 'hemanthkumar21'  
         IMAGE_NAME = 'application_services_app'
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        IMAGE_TAG = 'latest'
         
         GIT_REPO = 'https://github.com/Hemanth-gollapudi/application_services.git'
         
@@ -186,12 +186,8 @@ pipeline {
                             docker-compose build --no-cache app
                             
                             docker image inspect ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
-                            docker image inspect ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
-                            
-                            docker tag ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
                             
                             docker images | findstr "${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" || exit 1
-                            docker images | findstr "${DOCKER_REGISTRY}/${IMAGE_NAME}:latest" || exit 1
                         """
                     }
                 }
@@ -207,9 +203,8 @@ pipeline {
                             echo Logging in to Docker Hub...
                             docker login -u %DOCKER_USERNAME% -p %DOCKER_PASSWORD% || exit 1
                             
-                            
-                            echo Pushing latest tag: ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
-                            docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
+                            echo Pushing latest tag: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                            docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
                             
                             docker logout
                         """
@@ -224,19 +219,13 @@ pipeline {
                     echo "Verifying Docker image..."
                     bat """
                         docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
-                        docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
                         
-                        docker run -d -p 8009:8000 --name test-${IMAGE_NAME}-version ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
+                        docker run -d -p 8009:8000 --name test-${IMAGE_NAME} ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
                         timeout /t 10 /nobreak
-                        docker ps | findstr "test-${IMAGE_NAME}-version" || exit 1
-                        docker logs test-${IMAGE_NAME}-version
+                        docker ps | findstr "test-${IMAGE_NAME}" || exit 1
+                        docker logs test-${IMAGE_NAME}
                         
-                        docker run -d -p 8010:8000 --name test-${IMAGE_NAME}-latest ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
-                        timeout /t 10 /nobreak
-                        docker ps | findstr "test-${IMAGE_NAME}-latest" || exit 1
-                        docker logs test-${IMAGE_NAME}-latest
-                        
-                        docker rm -f test-${IMAGE_NAME}-version test-${IMAGE_NAME}-latest
+                        docker rm -f test-${IMAGE_NAME}
                     """
                 }
             }
