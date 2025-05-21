@@ -4,7 +4,6 @@ pipeline {
     environment {
         DOCKER_REGISTRY = 'hemanthkumar21'  
         IMAGE_NAME = 'application_services_app'
-        IMAGE_TAG = 'latest'
         
         GIT_REPO = 'https://github.com/Hemanth-gollapudi/application_services.git'
         
