@@ -1,7 +1,7 @@
 FROM python:3.10-slim
 
 # Add build argument for version
-ARG BUILD_VERSION=latest
+ARG BUILD_VERSION
 LABEL version=${BUILD_VERSION}
 
 # Install system dependencies

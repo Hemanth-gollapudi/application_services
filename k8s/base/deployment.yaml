@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: application-services-app
-          image: hemanthkumar21/application_services_app:latest
+          image: hemanthkumar21/application_services_app:${BUILD_NUMBER}
           ports:
             - containerPort: 8009
           env:

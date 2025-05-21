@@ -187,9 +187,6 @@ pipeline {
                             docker image inspect ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || exit 1
                             
                             docker images | findstr "${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}" || exit 1
-                            
-                            echo Tagging image as latest
-                            docker tag ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
                         """
                     }
                 }
@@ -205,8 +202,8 @@ pipeline {
                             echo Logging in to Docker Hub...
                             docker login -u %DOCKER_USERNAME% -p %DOCKER_PASSWORD% || exit 1
                             
-                            echo Pushing latest tag: ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
-                            docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
+                            echo Pushing image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
+                            docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || exit 1
                             
                             docker logout
                         """
@@ -220,9 +217,9 @@ pipeline {
                 script {
                     echo "Verifying Docker image..."
                     bat """
-                        docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
+                        docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || exit 1
                         
-                        docker run -d -p 8009:8000 --name test-${IMAGE_NAME} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
+                        docker run -d -p 8009:8000 --name test-${IMAGE_NAME} ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || exit 1
                         timeout /t 10 /nobreak
                         docker ps | findstr "test-${IMAGE_NAME}" || exit 1
                         docker logs test-${IMAGE_NAME}

@@ -31,12 +31,12 @@ services:
       - keycloak_data:/opt/keycloak/data
 
   app:
-    image: application_services_app:latest
+    image: application_services_app:${BUILD_NUMBER}
     build:
       context: .
       dockerfile: services/tenant_user-service/Dockerfile
       args:
-        - BUILD_VERSION=latest
+        - BUILD_VERSION=${BUILD_NUMBER}
     command: uvicorn tenant_user_service.main:app --host 0.0.0.0 --reload
     env_file:
       - ./.env
@@ -49,12 +49,12 @@ services:
       - keycloak-tenant
 
   migrate:
-    image: application_services_app:latest
+    image: application_services_app:${BUILD_NUMBER}
     build:
       context: .
       dockerfile: services/tenant_user-service/Dockerfile
       args:
-        - BUILD_VERSION=latest
+        - BUILD_VERSION=${BUILD_NUMBER}
     command: alembic -c /app/alembic.ini upgrade head
     env_file:
       - ./.env
