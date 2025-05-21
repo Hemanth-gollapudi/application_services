@@ -31,7 +31,7 @@ services:
       - keycloak_data:/opt/keycloak/data
 
   app:
-    image: application_services_app:${BUILD_NUMBER}
+    image: ${DOCKER_REGISTRY:-hemanthkumar21}/${IMAGE_NAME:-application_services_app}:${BUILD_NUMBER:-latest}
     build:
       context: .
       dockerfile: services/tenant_user-service/Dockerfile
@@ -49,7 +49,7 @@ services:
       - keycloak-tenant
 
   migrate:
-    image: application_services_app:${BUILD_NUMBER}
+    image: ${DOCKER_REGISTRY:-hemanthkumar21}/${IMAGE_NAME:-application_services_app}:${BUILD_NUMBER:-latest}
     build:
       context: .
       dockerfile: services/tenant_user-service/Dockerfile

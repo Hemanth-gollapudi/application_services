@@ -187,6 +187,8 @@ pipeline {
                             docker image inspect ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || exit 1
                             
                             docker images | findstr "${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}" || exit 1
+                            docker tag ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
+                            docker image inspect ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
                         """
                     }
                 }
