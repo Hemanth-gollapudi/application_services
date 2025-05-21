@@ -207,8 +207,6 @@ pipeline {
                             echo Logging in to Docker Hub...
                             docker login -u %DOCKER_USERNAME% -p %DOCKER_PASSWORD% || exit 1
                             
-                            echo Pushing versioned image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
-                            docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
                             
                             echo Pushing latest tag: ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
                             docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
@@ -329,7 +327,7 @@ pipeline {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
                     bat """
-                        ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ec2-user@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% %DOCKER_REGISTRY%/%IMAGE_NAME%:%IMAGE_TAG%"
+                        ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ec2-user@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% %DOCKER_REGISTRY%/%IMAGE_NAME%:latest"
                     """
                 }
             }
