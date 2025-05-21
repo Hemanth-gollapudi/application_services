@@ -189,6 +189,9 @@ pipeline {
                             net start com.docker.service || echo "Docker service already running"
                             ping -n 31 127.0.0.1 > nul
                             docker info || exit 1
+                            echo "Cleaning up old containers and images..."
+                            docker-compose down --rmi all || echo "No existing containers to clean up"
+                            docker system prune -f || echo "No images to prune"
                         '''
                     }
                 }
@@ -203,9 +206,18 @@ pipeline {
                         bat """
                             docker version
                             echo Building image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
-                            docker rm -f ${IMAGE_NAME} 2>nul || exit 0
-                            docker build --no-cache -t ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -f services/tenant_user-service/Dockerfile .
+                            docker-compose build --no-cache app
+                            
+                            # Verify the image was built successfully
+                            docker image inspect ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
+                            docker image inspect ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
+                            
+                            # Tag the image with both version and latest
+                            docker tag ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
+                            
+                            # Verify both tags exist
                             docker images | findstr "${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}" || exit 1
+                            docker images | findstr "${DOCKER_REGISTRY}/${IMAGE_NAME}:latest" || exit 1
                         """
                     }
                 }
@@ -220,11 +232,13 @@ pipeline {
                         bat """
                             echo Logging in to Docker Hub...
                             docker login -u %DOCKER_USERNAME% -p %DOCKER_PASSWORD% || exit 1
-                            echo Pushing image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
+                            
+                            echo Pushing versioned image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG}
                             docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
-                            echo Tagging and pushing as latest...
-                            docker tag ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
+                            
+                            echo Pushing latest tag: ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
                             docker push ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
+                            
                             docker logout
                         """
                     }
@@ -237,15 +251,26 @@ pipeline {
                 script {
                     echo "Verifying Docker image..."
                     bat """
-                        echo Pulling image to verify accessibility...
+                        echo Pulling both versioned and latest images to verify accessibility...
                         docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
-                        echo Running test container...
-                        docker run -d -p 8009:8000 --name test-${IMAGE_NAME} ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
+                        docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
+                        
+                        echo Running test container with versioned image...
+                        docker run -d -p 8009:8000 --name test-${IMAGE_NAME}-version ${DOCKER_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} || exit 1
                         timeout /t 10 /nobreak
-                        docker ps | findstr "test-${IMAGE_NAME}" || exit 1
-                        echo Container logs:
-                        docker logs test-${IMAGE_NAME}
-                        docker rm -f test-${IMAGE_NAME}
+                        docker ps | findstr "test-${IMAGE_NAME}-version" || exit 1
+                        echo Container logs for versioned image:
+                        docker logs test-${IMAGE_NAME}-version
+                        
+                        echo Running test container with latest image...
+                        docker run -d -p 8010:8000 --name test-${IMAGE_NAME}-latest ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest || exit 1
+                        timeout /t 10 /nobreak
+                        docker ps | findstr "test-${IMAGE_NAME}-latest" || exit 1
+                        echo Container logs for latest image:
+                        docker logs test-${IMAGE_NAME}-latest
+                        
+                        # Cleanup test containers
+                        docker rm -f test-${IMAGE_NAME}-version test-${IMAGE_NAME}-latest
                     """
                 }
             }
