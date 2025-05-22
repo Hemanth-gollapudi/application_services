@@ -300,7 +300,7 @@ pipeline {
                 }
             }
         }
-stage('Setup SSH Key') {
+        stage('Setup SSH Key') {
             steps {
                 script {
                     echo "Setting up SSH key for Jenkins service..."
