@@ -244,9 +244,6 @@ pipeline {
                         
                         echo Verifying key file permissions...
                         icacls %KEY_NAME%.pem
-                        
-                        echo Testing SSH connection...
-                        ssh -o StrictHostKeyChecking=no -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "echo 'SSH connection successful'"
                     """
                 }
             }
@@ -304,19 +301,21 @@ pipeline {
             }
         }
 
+        stage('Verify SSH Connectivity') {
+            steps {
+                script {
+                    echo "Verifying SSH connectivity to EC2 instance..."
+                    bat 'ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% echo "SSH OK"'
+                }
+            }
+        }
+
         stage('Deploy to EC2') {
             steps {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
                     dir('infrastructure/terraform') {
-                        bat """
-                            if not exist %KEY_NAME%.pem (
-                                error "Key file %KEY_NAME%.pem not found. Cannot proceed with deployment."
-                            )
-                            
-                            ssh -o StrictHostKeyChecking=no -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% \\
-                            "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
-                        """
+                        bat 'ssh -o StrictHostKeyChecking=no -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"'
                     }
                 }
             }
