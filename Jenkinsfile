@@ -299,26 +299,15 @@ pipeline {
             }
         }
 
-        stage('Fix PEM File Permissions') {
-            steps {
-                script {
-                    powershell '''
-                        $pemPath = "infrastructure/terraform/application-services-key-101.pem"
-                        $account = [System.Security.Principal.NTAccount]"${env.USERNAME}"
-                        $acl = Get-Acl $pemPath
-                        $acl.SetAccessRuleProtection($true, $false) # Disable inheritance
-                        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) } # Remove all
-                        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($account, "FullControl", "Allow")
-                        $acl.AddAccessRule($rule)
-                        Set-Acl $pemPath $acl
-                    '''
-                }
-            }
-        }
-
         stage('Deploy to EC2') {
             steps {
                 script {
+                    echo "Fixing .pem file permissions..."
+                    bat '''
+                            icacls infrastructure\\terraform\\application-services-key-%BUILD_NUMBER%.pem /inheritance:r
+                            icacls infrastructure\\terraform\\application-services-key-%BUILD_NUMBER%.pem /remove "BUILTIN\\Users"
+                            icacls infrastructure\\terraform\\application-services-key-%BUILD_NUMBER%.pem /grant:r "%USERNAME%:R"
+                    '''
                     echo "Deploying Docker container on EC2 instance..."
                     bat """
                         ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
