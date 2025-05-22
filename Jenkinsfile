@@ -177,11 +177,10 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
-                    echo "Building Docker image with tag 'latest'..."
+                    echo "Building Docker image with tag '${BUILD_NUMBER}'..."
                     retry(2) {
                         bat """
                             docker-compose build --no-cache app
-                            docker tag ${DOCKER_REGISTRY}/${IMAGE_NAME} ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest
                         """
                     }
                 }
@@ -310,7 +309,7 @@ pipeline {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
                     bat """
-                        ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ec2-user@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:latest"
+                        ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ec2-user@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
                     """
                 }
             }
