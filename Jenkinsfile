@@ -299,6 +299,23 @@ pipeline {
             }
         }
 
+        stage('Fix PEM File Permissions') {
+            steps {
+                script {
+                    powershell '''
+                        $pemPath = "infrastructure/terraform/application-services-key-101.pem"
+                        $account = [System.Security.Principal.NTAccount]"${env.USERNAME}"
+                        $acl = Get-Acl $pemPath
+                        $acl.SetAccessRuleProtection($true, $false) # Disable inheritance
+                        $acl.Access | ForEach-Object { $acl.RemoveAccessRule($_) } # Remove all
+                        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($account, "FullControl", "Allow")
+                        $acl.AddAccessRule($rule)
+                        Set-Acl $pemPath $acl
+                    '''
+                }
+            }
+        }
+
         stage('Deploy to EC2') {
             steps {
                 script {
