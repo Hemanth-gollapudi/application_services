@@ -226,23 +226,9 @@ pipeline {
 
         stage('Create AWS Key Pair') {
             steps {
-                script {
-                    echo "Creating AWS key pair..."
-                    try {
-                        dir('infrastructure/terraform') {
-                            bat 'terraform init -input=false'
-
-                            bat """
-                                terraform apply -auto-approve -var="key_name=%KEY_NAME%" -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair
-                                if errorlevel 1 (
-                                    exit 1
-                                )
-                            """
-
-                        }
-                    } catch (Exception e) {
-                        error "Failed to create key pair: ${e.message}"
-                    }
+                dir('infrastructure/terraform') {
+                    bat 'terraform init -input=false'
+                    bat 'terraform apply -auto-approve -var="key_name=%KEY_NAME%" -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair'
                 }
             }
         }
@@ -302,16 +288,8 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 script {
-                    echo "Fixing .pem file permissions..."
-                    bat '''
-                            icacls infrastructure\\terraform\\application-services-key-%BUILD_NUMBER%.pem /inheritance:r
-                            icacls infrastructure\\terraform\\application-services-key-%BUILD_NUMBER%.pem /remove "BUILTIN\\Users"
-                            icacls infrastructure\\terraform\\application-services-key-%BUILD_NUMBER%.pem /grant:r "%USERNAME%:R"
-                    '''
                     echo "Deploying Docker container on EC2 instance..."
-                    bat """
-                        ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
-                    """
+                    bat 'ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"'
                 }
             }
         }
