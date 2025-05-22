@@ -313,6 +313,11 @@ pipeline {
             steps {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
+                    // Restrict private key file permissions for Jenkins service
+                    bat """
+                        icacls infrastructure/terraform/%KEY_NAME%.pem /inheritance:r
+                        icacls infrastructure/terraform/%KEY_NAME%.pem /remove "BUILTIN\\Administrators" /remove "BUILTIN\\Users" /remove "NT AUTHORITY\\SYSTEM" /grant "NT SERVICE\\\\Jenkins:R"
+                    """
                     bat """
                         ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
                     """
