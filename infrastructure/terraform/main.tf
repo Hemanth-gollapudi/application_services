@@ -262,9 +262,3 @@ resource "aws_eip" "app_eip" {
     Project = var.project_name
   }
 }
-
-# Output the Elastic IP
-output "instance_public_ip" {
-  value = aws_eip.app_eip.public_ip
-  description = "The public IP address of the EC2 instance"
-}
