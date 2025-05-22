@@ -300,6 +300,19 @@ pipeline {
                 }
             }
         }
+stage('Setup SSH Key') {
+            steps {
+                script {
+                    echo "Setting up SSH key for Jenkins service..."
+                    bat """
+                        mkdir %USERPROFILE%\\.ssh || exit 0
+                        copy infrastructure\\terraform\\%KEY_NAME%.pem %USERPROFILE%\\.ssh\\id_rsa /Y
+                        icacls %USERPROFILE%\\.ssh\\id_rsa /inheritance:r
+                        icacls %USERPROFILE%\\.ssh\\id_rsa /grant:r "NT AUTHORITY\\SYSTEM":R
+                    """
+                }
+            }
+        }
 
         stage('Verify SSH Connectivity') {
             steps {
