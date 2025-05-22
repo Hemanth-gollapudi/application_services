@@ -239,16 +239,6 @@ pipeline {
                                 )
                             """
 
-                            bat """
-                                if not exist %KEY_NAME%.pem (
-                                    exit 1
-                                )
-                                
-                                echo Setting proper permissions on key file...
-                                icacls %KEY_NAME%.pem /inheritance:r
-                                icacls %KEY_NAME%.pem /grant:r "NT SERVICE\\Jenkins:(R)"
-                                icacls %KEY_NAME%.pem /grant:r "SYSTEM:(R)"
-                            """
                         }
                     } catch (Exception e) {
                         error "Failed to create key pair: ${e.message}"
@@ -313,7 +303,9 @@ pipeline {
             steps {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
-                    bat 'ssh -o StrictHostKeyChecking=no -o StrictModes=no -i infrastructure/terraform/%KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"'
+                    bat """
+                        ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
+                    """
                 }
             }
         }
