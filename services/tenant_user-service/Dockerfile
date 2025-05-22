@@ -1,5 +1,12 @@
 FROM python:3.10-slim
 
+# Proxy settings and pip default timeout/retries
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ENV HTTP_PROXY=${HTTP_PROXY} HTTPS_PROXY=${HTTPS_PROXY} \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5
+
 # Add build argument for version
 ARG BUILD_VERSION
 LABEL version=${BUILD_VERSION}
@@ -15,7 +22,11 @@ WORKDIR /app
 
 # Copy requirements first for better caching
 COPY services/tenant_user-service/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir --timeout 120 --retries 5 \
+        --trusted-host pypi.org \
+        --trusted-host files.pythonhosted.org \
+        -r requirements.txt
 
 # Copy the service code
 COPY services/tenant_user-service /app/
