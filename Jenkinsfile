@@ -229,6 +229,25 @@ pipeline {
                 dir('infrastructure/terraform') {
                     bat 'terraform init -input=false'
                     bat 'terraform apply -auto-approve -var="key_name=%KEY_NAME%" -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair'
+                    
+                    // Verify .pem file exists and set permissions
+                    bat """
+                        if not exist %KEY_NAME%.pem (
+                            echo "Error: Key file %KEY_NAME%.pem was not created"
+                            exit 1
+                        )
+                        
+                        echo Setting proper permissions on key file...
+                        icacls %KEY_NAME%.pem /inheritance:r
+                        icacls %KEY_NAME%.pem /grant:r "NT SERVICE\\Jenkins:(R)"
+                        icacls %KEY_NAME%.pem /grant:r "SYSTEM:(R)"
+                        
+                        echo Verifying key file permissions...
+                        icacls %KEY_NAME%.pem
+                        
+                        echo Testing SSH connection...
+                        ssh -o StrictHostKeyChecking=no -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "echo 'SSH connection successful'"
+                    """
                 }
             }
         }
@@ -289,12 +308,16 @@ pipeline {
             steps {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
-                    
-                    bat """
-                        ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% \\
-                        "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
-                    """
-
+                    dir('infrastructure/terraform') {
+                        bat """
+                            if not exist %KEY_NAME%.pem (
+                                error "Key file %KEY_NAME%.pem not found. Cannot proceed with deployment."
+                            )
+                            
+                            ssh -o StrictHostKeyChecking=no -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% \\
+                            "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"
+                        """
+                    }
                 }
             }
         }
