@@ -246,12 +246,8 @@ pipeline {
                                 
                                 echo Setting proper permissions on key file...
                                 icacls %KEY_NAME%.pem /inheritance:r
-                                icacls %KEY_NAME%.pem /grant:r "SYSTEM:(R)"
-                                icacls %KEY_NAME%.pem /grant:r "NT AUTHORITY\\SYSTEM:(R)"
-                                icacls %KEY_NAME%.pem /grant:r "NT AUTHORITY\\LOCAL SERVICE:(R)"
-                                icacls %KEY_NAME%.pem /grant:r "NT AUTHORITY\\NETWORK SERVICE:(R)"
-                                icacls %KEY_NAME%.pem /grant:r "BUILTIN\\Users:(R)"
                                 icacls %KEY_NAME%.pem /grant:r "NT SERVICE\\Jenkins:(R)"
+                                icacls %KEY_NAME%.pem /grant:r "SYSTEM:(R)"
                             """
                         }
                     } catch (Exception e) {

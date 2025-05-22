@@ -30,7 +30,7 @@ output "private_key_path" {
 
 output "ssh_command" {
   description = "SSH command to connect to the instance"
-  value       = "ssh -i ${local_file.private_key.filename} ec2-user@${aws_eip.app_eip.public_ip}"
+  value       = "ssh -i ${local_file.private_key.filename} ubuntu@${aws_eip.app_eip.public_ip}"
 }
 
 output "vpc_id" {
