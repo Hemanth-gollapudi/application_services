@@ -214,7 +214,7 @@ pipeline {
                         docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || exit 1
                         
                         docker run -d -p 8009:8000 --name test-${IMAGE_NAME} ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || exit 1
-                        timeout /t 10 >nul
+                        ping -n 11 127.0.0.1 >nul
                         docker ps | findstr "test-${IMAGE_NAME}" || exit 1
                         docker logs test-${IMAGE_NAME}
                         
@@ -246,9 +246,12 @@ pipeline {
                                 
                                 echo Setting proper permissions on key file...
                                 icacls %KEY_NAME%.pem /inheritance:r
-                                icacls %KEY_NAME%.pem /grant:r "%USERNAME%:(R)"
                                 icacls %KEY_NAME%.pem /grant:r "SYSTEM:(R)"
-                                icacls %KEY_NAME%.pem /grant:r "Administrators:(R)"
+                                icacls %KEY_NAME%.pem /grant:r "NT AUTHORITY\\SYSTEM:(R)"
+                                icacls %KEY_NAME%.pem /grant:r "NT AUTHORITY\\LOCAL SERVICE:(R)"
+                                icacls %KEY_NAME%.pem /grant:r "NT AUTHORITY\\NETWORK SERVICE:(R)"
+                                icacls %KEY_NAME%.pem /grant:r "BUILTIN\\Users:(R)"
+                                icacls %KEY_NAME%.pem /grant:r "NT SERVICE\\Jenkins:(R)"
                             """
                         }
                     } catch (Exception e) {
