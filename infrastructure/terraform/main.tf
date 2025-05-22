@@ -252,11 +252,19 @@ resource "aws_instance" "app_server" {
   depends_on = [aws_key_pair.app_key_pair]
 }
 
-# Elastic IP for EC2 Instance
+# Create Elastic IP
 resource "aws_eip" "app_eip" {
-  instance = aws_instance.app_server.id
   domain   = "vpc"
+  instance = aws_instance.app_server.id
+
   tags = {
-    Name = "application-services-eip"
+    Name    = "${var.project_name}-eip"
+    Project = var.project_name
   }
+}
+
+# Output the Elastic IP
+output "instance_public_ip" {
+  value = aws_eip.app_eip.public_ip
+  description = "The public IP address of the EC2 instance"
 }
