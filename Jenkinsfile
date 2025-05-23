@@ -67,41 +67,14 @@ pipeline {
                     echo "Cleaning up existing resources..."
                     try {
                         bat """
-                            aws ec2 describe-vpcs --filters "Name=tag:Name,Values=application-services-vpc" --query 'Vpcs[*].VpcId' --output text | foreach-object {
-                                $vpcId = $_
-                                
-                                aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$vpcId" --query 'InternetGateways[*].InternetGatewayId' --output text | foreach-object {
-                                    aws ec2 detach-internet-gateway --internet-gateway-id $_ --vpc-id $vpcId
-                                    aws ec2 delete-internet-gateway --internet-gateway-id $_
-                                }
-                                
-                                aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpcId" --query 'Subnets[*].SubnetId' --output text | foreach-object {
-                                    aws ec2 delete-subnet --subnet-id $_
-                                }
-                                
-                                aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$vpcId" --query 'RouteTables[*].RouteTableId' --output text | foreach-object {
-                                    aws ec2 delete-route-table --route-table-id $_
-                                }
-                                
-                                aws ec2 describe-security-groups --filters "Name=vpc-id,Values=$vpcId" --query 'SecurityGroups[*].GroupId' --output text | foreach-object {
-                                    aws ec2 delete-security-group --group-id $_
-                                }
-                                
-                                aws ec2 describe-network-acls --filters "Name=vpc-id,Values=$vpcId" --query 'NetworkAcls[*].NetworkAclId' --output text | foreach-object {
-                                    aws ec2 delete-network-acl --network-acl-id $_
-                                }
-                                
-                                aws ec2 delete-vpc --vpc-id $vpcId
+                            aws ec2 describe-vpcs --filters "Name=tag:Name,Values=application-services-vpc" --query 'Vpcs[].VpcId' --output text | %% {
+                                aws ec2 delete-vpc --vpc-id $_
+                                echo "Deleted VPC: $_"
                             }
                             
-                            timeout /t 60 /nobreak
-                        """
-                        
-                        bat """
                             aws ec2 describe-security-groups --group-names application-services-sg 2>nul && (
                                 aws ec2 delete-security-group --group-name application-services-sg
                                 echo "Security group deleted successfully"
-                                sleep 10
                             ) || echo "Security group doesn't exist"
                         """
                         
@@ -115,8 +88,6 @@ pipeline {
                                 if exist application-services-key.pem del /f application-services-key.pem
                             '''
                         }
-
-                        sleep 30
                     } catch (Exception e) {
                         echo "Warning: Cleanup encountered some issues: ${e.message}"
                     }
@@ -229,31 +200,20 @@ pipeline {
                 dir('infrastructure/terraform') {
                     bat 'terraform init -input=false'
                     bat 'terraform apply -auto-approve -var="key_name=%KEY_NAME%" -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair'
+                    bat 'copy %KEY_NAME%.pem ..\\..\\%KEY_NAME%.pem /Y'
                     
-                    // Copy key to workspace root with proper permissions
                     bat """
-                        copy %KEY_NAME%.pem ..\\..\\%KEY_NAME%.pem /Y
-                        if not exist ..\\..\\%KEY_NAME%.pem (
-                            echo "Error: Failed to copy key file to workspace root"
+                        if not exist %KEY_NAME%.pem (
+                            echo "Error: Key file %KEY_NAME%.pem was not created"
                             exit 1
                         )
+                        
+                        icacls %KEY_NAME%.pem /inheritance:r
+                        icacls %KEY_NAME%.pem /grant:r "SYSTEM":(F)
+                        icacls %KEY_NAME%.pem /grant:r "BUILTIN\\Administrators":(F)
+                        icacls %KEY_NAME%.pem /grant:r "%USERNAME%":(F)
                     """
                 }
-                
-                // Set proper permissions on the key file in workspace root
-                bat """
-                    echo Setting proper permissions on key file...
-                    icacls %KEY_NAME%.pem /inheritance:r
-                    icacls %KEY_NAME%.pem /grant:r "%USERNAME%":(R)
-                    icacls %KEY_NAME%.pem /grant:r "NT AUTHORITY\\SYSTEM":(R)
-                    icacls %KEY_NAME%.pem /grant:r "BUILTIN\\Administrators":(R)
-                    
-                    echo Verifying key file permissions...
-                    icacls %KEY_NAME%.pem
-                    
-                    echo Key file content (first 10 lines):
-                    more +1 %KEY_NAME%.pem | head -n 10
-                """
             }
         }
 
@@ -315,8 +275,7 @@ pipeline {
                     echo "Verifying SSH connectivity to EC2 instance..."
                     retry(3) {
                         bat """
-                            echo Trying to connect to EC2 instance at %EC2_PUBLIC_IP%...
-                            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "echo SSH connection successful" || (
+                            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i application-services-key-%BUILD_NUMBER%.pem ubuntu@%EC2_PUBLIC_IP% echo "SSH connection successful" || (
                                 echo "SSH connection failed, waiting 30 seconds before retry..."
                                 ping -n 31 127.0.0.1 >nul
                                 exit 1
@@ -440,46 +399,59 @@ pipeline {
     }
 
     post {
-        success {
-            echo """
-                Pipeline completed successfully!
-                Application is available at: ${env.APPLICATION_URL}
-                EKS Cluster Name: ${EKS_CLUSTER_NAME}
-            """
-        }
-        failure {
-            script {
-                echo "Pipeline failed! Cleaning up resources..."
-                try {
-                    bat """
+    success {
+        echo """
+            Pipeline completed successfully!
+            Application is available at: ${env.APPLICATION_URL}
+            EKS Cluster Name: ${EKS_CLUSTER_NAME}
+        """
+    }
+
+    failure {
+        script {
+            echo "Pipeline failed! Cleaning up resources..."
+            try {
+                bat """
+                    eksctl get cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} && (
                         eksctl delete cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
-                    """
-                    
-                    dir('infrastructure/terraform') {
-                        if (fileExists('.terraform')) {
-                            bat 'terraform destroy -auto-approve'
-                        }
+                    ) || echo "Cluster does not exist, skipping deletion"
+                """
+
+                dir('infrastructure/terraform') {
+                    if (fileExists('terraform.tfstate')) {
+                        bat 'terraform destroy -auto-approve'
                     }
-                } catch (Exception e) {
-                    echo "Warning: Cleanup during failure encountered issues: ${e.message}"
                 }
+            } catch (Exception e) {
+                echo "Warning: Cleanup during failure encountered issues: ${e.message}"
             }
         }
-        always {
-            script {
-                try {
-                    // Clean up the key file
-                    bat """
-                        if exist %KEY_NAME%.pem (
-                            echo Deleting key file...
-                            del /f %KEY_NAME%.pem
-                        )
-                        docker system prune -f
-                    """
-                } catch (Exception e) {
-                    echo "Warning: Cleanup failed, but continuing..."
+    }
+
+    always {
+        script {
+            try {
+                bat """
+                    if exist %KEY_NAME%.pem (
+                        echo Deleting key file...
+                        del /f %KEY_NAME%.pem
+                    )
+                """
+
+                bat """
+                    if exist application-services-key-%BUILD_NUMBER%.pem (
+                        echo "Deleting key file..."
+                        del /f application-services-key-%BUILD_NUMBER%.pem
+                    )
+                """
+
+                bat "docker system prune -f"
+
+                retry(3) {
+                    cleanWs(cleanWhenFailure: true, deleteDirs: true)
                 }
-                cleanWs()
+            } catch (Exception e) {
+                echo "Warning: Cleanup failed: ${e.message}"
             }
         }
     }
