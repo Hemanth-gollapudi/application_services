@@ -450,8 +450,10 @@ pipeline {
                 retry(3) {
                     cleanWs(cleanWhenFailure: true, deleteDirs: true)
                 }
-            } catch (Exception e) {
+            } 
+            catch (Exception e) {
                 echo "Warning: Cleanup failed: ${e.message}"
+                }
             }
         }
     }
