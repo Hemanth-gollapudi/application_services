@@ -399,60 +399,59 @@ pipeline {
     }
 
     post {
-    success {
-        echo """
-            Pipeline completed successfully!
-            Application is available at: ${env.APPLICATION_URL}
-            EKS Cluster Name: ${EKS_CLUSTER_NAME}
-        """
-    }
+        success {
+            echo """
+                Pipeline completed successfully!
+                Application is available at: ${env.APPLICATION_URL}
+                EKS Cluster Name: ${EKS_CLUSTER_NAME}
+            """
+        }
 
-    failure {
-        script {
-            echo "Pipeline failed! Cleaning up resources..."
-            try {
-                bat """
-                    eksctl get cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} && (
-                        eksctl delete cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
-                    ) || echo "Cluster does not exist, skipping deletion"
-                """
+        failure {
+            script {
+                echo "Pipeline failed! Cleaning up resources..."
+                try {
+                    bat """
+                        eksctl get cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} && (
+                            eksctl delete cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
+                        ) || echo "Cluster does not exist, skipping deletion"
+                    """
 
-                dir('infrastructure/terraform') {
-                    if (fileExists('terraform.tfstate')) {
-                        bat 'terraform destroy -auto-approve'
+                    dir('infrastructure/terraform') {
+                        if (fileExists('terraform.tfstate')) {
+                            bat 'terraform destroy -auto-approve'
+                        }
                     }
+                } catch (Exception e) {
+                    echo "Warning: Cleanup during failure encountered issues: ${e.message}"
                 }
-            } catch (Exception e) {
-                echo "Warning: Cleanup during failure encountered issues: ${e.message}"
             }
         }
-    }
 
-    always {
-        script {
-            try {
-                bat """
-                    if exist %KEY_NAME%.pem (
-                        echo Deleting key file...
-                        del /f %KEY_NAME%.pem
-                    )
-                """
+        always {
+            script {
+                try {
+                    bat """
+                        if exist %KEY_NAME%.pem (
+                            echo Deleting key file...
+                            del /f %KEY_NAME%.pem
+                        )
+                    """
 
-                bat """
-                    if exist application-services-key-%BUILD_NUMBER%.pem (
-                        echo "Deleting key file..."
-                        del /f application-services-key-%BUILD_NUMBER%.pem
-                    )
-                """
+                    bat """
+                        if exist application-services-key-%BUILD_NUMBER%.pem (
+                            echo Deleting key file...
+                            del /f application-services-key-%BUILD_NUMBER%.pem
+                        )
+                    """
 
-                bat "docker system prune -f"
+                    bat "docker system prune -f"
 
-                retry(3) {
-                    cleanWs(cleanWhenFailure: true, deleteDirs: true)
-                }
-            } 
-            catch (Exception e) {
-                echo "Warning: Cleanup failed: ${e.message}"
+                    retry(3) {
+                        cleanWs(cleanWhenFailure: true, deleteDirs: true)
+                    }
+                } catch (Exception e) {
+                    echo "Warning: Cleanup failed: ${e.message}"
                 }
             }
         }
