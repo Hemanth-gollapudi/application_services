@@ -229,24 +229,31 @@ pipeline {
                 dir('infrastructure/terraform') {
                     bat 'terraform init -input=false'
                     bat 'terraform apply -auto-approve -var="key_name=%KEY_NAME%" -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair'
-                    bat 'copy %KEY_NAME%.pem %WORKSPACE%\\%KEY_NAME%.pem /Y'
                     
-                    // Verify .pem file exists and set permissions
+                    // Copy key to workspace root with proper permissions
                     bat """
-                        if not exist %KEY_NAME%.pem (
-                            echo "Error: Key file %KEY_NAME%.pem was not created"
+                        copy %KEY_NAME%.pem ..\\..\\%KEY_NAME%.pem /Y
+                        if not exist ..\\..\\%KEY_NAME%.pem (
+                            echo "Error: Failed to copy key file to workspace root"
                             exit 1
                         )
-                        
-                        echo Setting proper permissions on key file...
-                        icacls %KEY_NAME%.pem /inheritance:r
-                        icacls %KEY_NAME%.pem /grant:r "NT SERVICE\\Jenkins:(R)"
-                        icacls %KEY_NAME%.pem /grant:r "SYSTEM:(R)"
-                        
-                        echo Verifying key file permissions...
-                        icacls %KEY_NAME%.pem
                     """
                 }
+                
+                // Set proper permissions on the key file in workspace root
+                bat """
+                    echo Setting proper permissions on key file...
+                    icacls %KEY_NAME%.pem /inheritance:r
+                    icacls %KEY_NAME%.pem /grant:r "%USERNAME%":(R)
+                    icacls %KEY_NAME%.pem /grant:r "NT AUTHORITY\\SYSTEM":(R)
+                    icacls %KEY_NAME%.pem /grant:r "BUILTIN\\Administrators":(R)
+                    
+                    echo Verifying key file permissions...
+                    icacls %KEY_NAME%.pem
+                    
+                    echo Key file content (first 10 lines):
+                    more +1 %KEY_NAME%.pem | head -n 10
+                """
             }
         }
 
@@ -301,27 +308,21 @@ pipeline {
                 }
             }
         }
-stage('Setup SSH Key') {
-    steps {
-        script {
-            echo "Setting up SSH key in workspace .ssh folder..."
-            bat """
-                mkdir .ssh || exit 0
-                copy infrastructure\\terraform\\%KEY_NAME%.pem .ssh\\id_rsa /Y
-                icacls .ssh\\id_rsa /inheritance:r
-                icacls .ssh\\id_rsa /grant:r "%USERNAME%":R
-            """
-        }
-    }
-}
 
         stage('Verify SSH Connectivity') {
             steps {
                 script {
                     echo "Verifying SSH connectivity to EC2 instance..."
-                    bat """
-                        ssh -o StrictHostKeyChecking=no -i .ssh/id_rsa ubuntu@%EC2_PUBLIC_IP% echo "SSH OK"
-                    """
+                    retry(3) {
+                        bat """
+                            echo Trying to connect to EC2 instance at %EC2_PUBLIC_IP%...
+                            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "echo SSH connection successful" || (
+                                echo "SSH connection failed, waiting 30 seconds before retry..."
+                                ping -n 31 127.0.0.1 >nul
+                                exit 1
+                            )
+                        """
+                    }
                 }
             }
         }
@@ -330,7 +331,15 @@ stage('Setup SSH Key') {
             steps {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
-                    bat 'ssh -o StrictHostKeyChecking=no -i .ssh/id_rsa ubuntu@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"'
+                    bat """
+                        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "
+                            sudo apt-get update -qq
+                            sudo apt-get install -qq docker.io
+                            sudo systemctl start docker
+                            sudo docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
+                            sudo docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
+                        "
+                    """
                 }
             }
         }
@@ -341,7 +350,7 @@ stage('Setup SSH Key') {
                     echo "Creating EKS cluster..."
                     try {
                         bat """
-                            yes Y | eksctl create cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --nodegroup-name ${EKS_NODE_GROUP_NAME} --node-type ${EKS_NODE_TYPE} --nodes-min ${EKS_NODE_MIN} --nodes-max ${EKS_NODE_MAX} --nodes ${EKS_NODE_DESIRED} --managed --with-oidc --ssh-access --ssh-public-key ${KEY_NAME}
+                            yes Y | eksctl create cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --nodegroup-name ${EKS_NODE_GROUP_NAME} --node-type ${EKS_NODE_TYPE} --nodes-min ${EKS_NODE_MIN} --nodes-max ${EKS_NODE_MAX} --nodes ${EKS_NODE_DESIRED} --managed --with-oidc --ssh-access --ssh-public-key %KEY_NAME%
                         """
                         echo "cluster created successfully"
                         
@@ -459,14 +468,19 @@ stage('Setup SSH Key') {
         always {
             script {
                 try {
-                    bat "docker system prune -f"
+                    // Clean up the key file
+                    bat """
+                        if exist %KEY_NAME%.pem (
+                            echo Deleting key file...
+                            del /f %KEY_NAME%.pem
+                        )
+                        docker system prune -f
+                    """
                 } catch (Exception e) {
-                    echo "Warning: Docker cleanup failed, but continuing..."
+                    echo "Warning: Cleanup failed, but continuing..."
                 }
                 cleanWs()
             }
         }
     }
 }
-
-
