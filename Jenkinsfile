@@ -229,6 +229,7 @@ pipeline {
                 dir('infrastructure/terraform') {
                     bat 'terraform init -input=false'
                     bat 'terraform apply -auto-approve -var="key_name=%KEY_NAME%" -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair'
+                    bat 'copy %KEY_NAME%.pem %WORKSPACE%\\%KEY_NAME%.pem /Y'
                     
                     // Verify .pem file exists and set permissions
                     bat """
