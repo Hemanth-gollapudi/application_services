@@ -201,17 +201,17 @@ pipeline {
                     bat 'terraform init -input=false'
                     bat 'terraform apply -auto-approve -var="key_name=%KEY_NAME%" -target=tls_private_key.app_private_key -target=local_file.private_key -target=aws_key_pair.app_key_pair'
                     bat 'copy %KEY_NAME%.pem ..\\..\\%KEY_NAME%.pem /Y'
+                    bat 'echo "Key file saved to workspace: %WORKSPACE%\\%KEY_NAME%.pem"'
                     
                     bat """
-                        if not exist %KEY_NAME%.pem (
-                            echo "Error: Key file %KEY_NAME%.pem was not created"
+                        if not exist ..\\..\\%KEY_NAME%.pem (
+                            echo "Error: Key file %KEY_NAME%.pem was not copied to workspace"
                             exit 1
                         )
                         
-                        icacls %KEY_NAME%.pem /inheritance:r
-                        icacls %KEY_NAME%.pem /grant:r "SYSTEM":(F)
-                        icacls %KEY_NAME%.pem /grant:r "BUILTIN\\Administrators":(F)
-                        icacls %KEY_NAME%.pem /grant:r "%USERNAME%":(F)
+                        icacls ..\\..\\%KEY_NAME%.pem /inheritance:r
+                        icacls ..\\..\\%KEY_NAME%.pem /grant:r "NT AUTHORITY\\SYSTEM":F
+                        icacls ..\\..\\%KEY_NAME%.pem /grant:r "BUILTIN\\Administrators":F
                     """
                 }
             }
