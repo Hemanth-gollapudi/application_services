@@ -301,28 +301,25 @@ pipeline {
             }
         }
 stage('Setup SSH Key') {
-            steps {
-                script {
-                    echo "Setting up SSH key for Jenkins service..."
-                    bat """
-                        mkdir %USERPROFILE%\\.ssh || exit 0
-                        copy infrastructure\\terraform\\%KEY_NAME%.pem %USERPROFILE%\\.ssh\\id_rsa /Y
-                        icacls %USERPROFILE%\\.ssh\\id_rsa /inheritance:r
-                        icacls %USERPROFILE%\\.ssh\\id_rsa /grant:r "NT AUTHORITY\\SYSTEM":R
-                    """
-                }
-            }
+    steps {
+        script {
+            echo "Setting up SSH key in workspace .ssh folder..."
+            bat """
+                mkdir .ssh || exit 0
+                copy infrastructure\\terraform\\%KEY_NAME%.pem .ssh\\id_rsa /Y
+                icacls .ssh\\id_rsa /inheritance:r
+                icacls .ssh\\id_rsa /grant:r "%USERNAME%":R
+            """
         }
+    }
+}
 
         stage('Verify SSH Connectivity') {
             steps {
                 script {
                     echo "Verifying SSH connectivity to EC2 instance..."
                     bat """
-                        for /f "tokens=*" %%u in ('whoami') do set JUSER=%%u
-                        icacls infrastructure/terraform/%KEY_NAME%.pem /inheritance:r
-                        icacls infrastructure/terraform/%KEY_NAME%.pem /grant:r "%%JUSER%%":R
-                        ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% echo "SSH OK"
+                        ssh -o StrictHostKeyChecking=no -i .ssh/id_rsa ubuntu@%EC2_PUBLIC_IP% echo "SSH OK"
                     """
                 }
             }
@@ -332,9 +329,7 @@ stage('Setup SSH Key') {
             steps {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
-                    dir('infrastructure/terraform') {
-                        bat 'ssh -o StrictHostKeyChecking=no -i infrastructure/terraform/%KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"'
-                    }
+                    bat 'ssh -o StrictHostKeyChecking=no -i .ssh/id_rsa ubuntu@%EC2_PUBLIC_IP% "docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}"'
                 }
             }
         }
