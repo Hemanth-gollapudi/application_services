@@ -131,20 +131,12 @@ pipeline {
         stage('Start Docker') {
             steps {
                 script {
-                    echo "Starting Docker Desktop..."
+                    echo "Starting Docker service..."
                     retry(3) {
                         bat '''
-                            net start com.docker.service || echo "Docker Desktop service already running"
-                            start "" /b "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe" --quiet
-                            echo Waiting for Docker Desktop to initialize...
-                            for /L %%i in (1,1,30) do (
-                                docker info && goto done
-                                timeout /t 5 /nobreak >nul
-                            )
-                            echo Docker Desktop did not start in time
-                            exit 1
-                        :done
-                            docker info
+                            net start com.docker.service || echo "Docker service already running"
+                            ping -n 31 127.0.0.1 > nul
+                            docker info || exit 1
                             docker-compose down --rmi all || echo "No existing containers to clean up"
                             docker system prune -f || echo "No images to prune"
                         '''
