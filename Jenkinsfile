@@ -135,15 +135,8 @@ pipeline {
                     retry(3) {
                         bat '''
                             net start com.docker.service || echo "Docker service already running"
-                            echo Waiting for Docker daemon to be available...
-                            for /L %%i in (1,1,12) do (
-                              docker info && goto success
-                              timeout /t 5 /nobreak >nul
-                            )
-                            echo Docker daemon did not become available in time
-                            exit 1
-                            :success
-                            docker info
+                            ping -n 31 127.0.0.1 > nul
+                            docker info || exit 1
                             docker-compose down --rmi all || echo "No existing containers to clean up"
                             docker system prune -f || echo "No images to prune"
                         '''
@@ -298,7 +291,7 @@ pipeline {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
                     bat """
-                        ssh -o StrictHostKeyChecking=no -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "bash -c 'while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 5; done; sudo apt-get update -qq; sudo apt-get install -qq -y docker.io; sudo systemctl start docker; sudo docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}; sudo docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}'"
+                        ssh -o StrictHostKeyChecking=no -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "bash -c 'sudo apt-get update -qq && sudo apt-get install -qq docker.io && sudo systemctl start docker && sudo docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} && sudo docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}'"
                     """
                 }
             }
