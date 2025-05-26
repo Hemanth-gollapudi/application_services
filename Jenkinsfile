@@ -342,9 +342,9 @@ sudo docker pull ''' + "${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}" + '''
 sudo docker stop app-container || true
 sudo docker rm app-container || true
 
-# Run new container
+# Run new container - FIXED PORT MAPPING
 echo "Starting application container..."
-sudo docker run -d --name app-container -p ''' + "${APP_PORT}:${APP_PORT}" + ''' ''' + "${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}" + '''
+sudo docker run -d --name app-container -p 3000:8000 ''' + "${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}" + '''
 
 # Verify container is running
 sleep 10
