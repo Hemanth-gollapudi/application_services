@@ -291,7 +291,7 @@ pipeline {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
                     bat """
-                        ssh -o StrictHostKeyChecking=no -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "bash -c 'sudo apt-get update -qq && sudo apt-get install -qq docker.io && sudo systemctl start docker && sudo docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} && sudo docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}'"
+                        ssh -o StrictHostKeyChecking=no -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "bash -c 'while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1; do sleep 5; done; sudo apt-get update -qq; sudo apt-get install -qq -y docker.io; sudo systemctl start docker; sudo docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}; sudo docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}'"
                     """
                 }
             }
