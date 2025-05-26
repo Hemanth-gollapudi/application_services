@@ -67,15 +67,17 @@ pipeline {
                     echo "Cleaning up existing resources..."
                     try {
                         bat """
-                            aws ec2 describe-vpcs --filters "Name=tag:Name,Values=application-services-vpc" --query 'Vpcs[].VpcId' --output text | %% {
-                                aws ec2 delete-vpc --vpc-id $_
-                                echo "Deleted VPC: $_"
-                            }
+                            for /f "tokens=*" %%i in ('aws ec2 describe-vpcs --filters "Name=tag:Name,Values=application-services-vpc" --query "Vpcs[].VpcId" --output text 2^>nul') do (
+                                if not "%%i"=="" (
+                                    aws ec2 delete-vpc --vpc-id %%i
+                                    echo Deleted VPC: %%i
+                                )
+                            )
                             
-                            aws ec2 describe-security-groups --group-names application-services-sg 2>nul && (
+                            aws ec2 describe-security-groups --group-names application-services-sg >nul 2>&1 && (
                                 aws ec2 delete-security-group --group-name application-services-sg
-                                echo "Security group deleted successfully"
-                            ) || echo "Security group doesn't exist"
+                                echo Security group deleted successfully
+                            ) || echo Security group doesn't exist
                         """
                         
                         dir('infrastructure/terraform') {
@@ -269,13 +271,22 @@ pipeline {
             }
         }
 
+        stage('Wait for EC2 Instance') {
+            steps {
+                script {
+                    echo "Waiting for EC2 instance to be ready..."
+                    sleep(time: 60, unit: "SECONDS")
+                }
+            }
+        }
+
         stage('Verify SSH Connectivity') {
             steps {
                 script {
                     echo "Verifying SSH connectivity to EC2 instance..."
-                    retry(3) {
+                    retry(5) {
                         bat """
-                            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i application-services-key-%BUILD_NUMBER%.pem ubuntu@%EC2_PUBLIC_IP% echo "SSH connection successful" || (
+                            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=nul -o ConnectTimeout=30 -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "echo 'SSH connection successful'" || (
                                 echo "SSH connection failed, waiting 30 seconds before retry..."
                                 ping -n 31 127.0.0.1 >nul
                                 exit 1
@@ -290,15 +301,96 @@ pipeline {
             steps {
                 script {
                     echo "Deploying Docker container on EC2 instance..."
+                    // Create a temporary script file to avoid quoting issues
+                    writeFile file: 'deploy_script.sh', text: '''#!/bin/bash
+set -e
+echo "Starting deployment script..."
+
+# Wait for cloud-init to complete
+while [ ! -f /var/lib/cloud/instance/boot-finished ]; do
+    echo "Waiting for cloud-init to complete..."
+    sleep 10
+done
+
+# Update package list with retries
+for i in $(seq 1 12); do 
+    if sudo apt-get update -qq; then
+        break
+    else
+        echo "apt-get update failed, retrying in 10 seconds..."
+        sleep 10
+    fi
+done
+
+# Install Docker
+if ! command -v docker &> /dev/null; then
+    echo "Installing Docker..."
+    sudo apt-get install -y docker.io
+    sudo systemctl start docker
+    sudo systemctl enable docker
+    sudo usermod -aG docker ubuntu
+else
+    echo "Docker already installed"
+    sudo systemctl start docker
+fi
+
+# Pull and run the application
+echo "Pulling Docker image..."
+sudo docker pull ''' + "${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}" + '''
+
+# Stop existing container if running
+sudo docker stop app-container || true
+sudo docker rm app-container || true
+
+# Run new container
+echo "Starting application container..."
+sudo docker run -d --name app-container -p ''' + "${APP_PORT}:${APP_PORT}" + ''' ''' + "${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}" + '''
+
+# Verify container is running
+sleep 10
+if sudo docker ps | grep app-container; then
+    echo "Application deployed successfully!"
+else
+    echo "Deployment failed - container not running"
+    sudo docker logs app-container
+    exit 1
+fi
+'''
+                    
                     bat """
-                        ssh -o StrictHostKeyChecking=no -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "bash -c '
-                            for i in \$(seq 1 12); do sudo apt-get update -qq && break || sleep 5; done
-                            sudo apt-get install -qq docker.io
-                            sudo systemctl start docker
-                            sudo docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
-                            sudo docker run -d -p %APP_PORT%:%APP_PORT% ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
-                        '"
+                        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=nul -i %KEY_NAME%.pem deploy_script.sh ubuntu@%EC2_PUBLIC_IP%:~/deploy_script.sh
+                        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=nul -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "chmod +x ~/deploy_script.sh && ~/deploy_script.sh"
                     """
+                    
+                    // Clean up the temporary script
+                    bat "del deploy_script.sh"
+                }
+            }
+        }
+
+        stage('Verify Application Deployment') {
+            steps {
+                script {
+                    echo "Verifying application is running..."
+                    retry(3) {
+                        bat """
+                            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=nul -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "curl -f http://localhost:${APP_PORT}/health || curl -f http://localhost:${APP_PORT}/ || (echo 'Health check failed' && sudo docker logs app-container && exit 1)"
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Get AWS Account ID') {
+            steps {
+                script {
+                    echo "Getting AWS Account ID..."
+                    def awsAccountId = bat(
+                        script: 'aws sts get-caller-identity --query Account --output text',
+                        returnStdout: true
+                    ).trim()
+                    env.AWS_ACCOUNT_ID = awsAccountId
+                    echo "AWS Account ID: ${env.AWS_ACCOUNT_ID}"
                 }
             }
         }
@@ -309,9 +401,9 @@ pipeline {
                     echo "Creating EKS cluster..."
                     try {
                         bat """
-                            yes Y | eksctl create cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --nodegroup-name ${EKS_NODE_GROUP_NAME} --node-type ${EKS_NODE_TYPE} --nodes-min ${EKS_NODE_MIN} --nodes-max ${EKS_NODE_MAX} --nodes ${EKS_NODE_DESIRED} --managed --with-oidc --ssh-access --ssh-public-key %KEY_NAME%
+                            eksctl create cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --nodegroup-name ${EKS_NODE_GROUP_NAME} --node-type ${EKS_NODE_TYPE} --nodes-min ${EKS_NODE_MIN} --nodes-max ${EKS_NODE_MAX} --nodes ${EKS_NODE_DESIRED} --managed --with-oidc --ssh-access --ssh-public-key %KEY_NAME% --timeout=25m
                         """
-                        echo "cluster created successfully"
+                        echo "Cluster created successfully"
                         
                         bat """
                             aws eks update-kubeconfig --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
@@ -321,14 +413,15 @@ pipeline {
                             kubectl create namespace application-services --dry-run=client -o yaml | kubectl apply -f -
                         """
                         
+                        // Create service account for AWS Load Balancer Controller
+                        bat """
+                            eksctl create iamserviceaccount --cluster=${EKS_CLUSTER_NAME} --namespace=kube-system --name=aws-load-balancer-controller --role-name AmazonEKSLoadBalancerControllerRole --attach-policy-arn=arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess --approve --region=${AWS_DEFAULT_REGION}
+                        """
+                        
                         bat """
                             helm repo add eks https://aws.github.io/eks-charts
                             helm repo update
-                            helm install aws-load-balancer-controller eks/aws-load-balancer-controller \\
-                                -n kube-system \\
-                                --set clusterName=${EKS_CLUSTER_NAME} \\
-                                --set serviceAccount.create=true \\
-                                --set serviceAccount.annotations."eks\\.amazonaws\\.com/role-arn"=arn:aws:iam::${AWS_ACCOUNT_ID}:role/aws-load-balancer-controller
+                            helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system --set clusterName=${EKS_CLUSTER_NAME} --set serviceAccount.create=false --set serviceAccount.name=aws-load-balancer-controller
                         """
                     } catch (Exception e) {
                         error "Failed to create EKS cluster: ${e.message}"
@@ -343,29 +436,34 @@ pipeline {
                     echo "Deploying to EKS cluster..."
                     try {
                         bat """
-                            kubectl create configmap app-config \\
-                                --from-literal=POSTGRES_DB=${POSTGRES_DB} \\
-                                --from-literal=POSTGRES_USER=${POSTGRES_USER} \\
-                                --from-literal=POSTGRES_PASSWORD=${POSTGRES_PASSWORD} \\
-                                --namespace application-services \\
-                                --dry-run=client -o yaml | kubectl apply -f -
+                            kubectl create configmap app-config --from-literal=POSTGRES_DB=${POSTGRES_DB} --from-literal=POSTGRES_USER=${POSTGRES_USER} --from-literal=POSTGRES_PASSWORD=${POSTGRES_PASSWORD} --namespace application-services --dry-run=client -o yaml | kubectl apply -f -
                         """
                         
                         withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
                             bat """
-                                kubectl create secret docker-registry dockerhub-credentials \\
-                                    --docker-server=https://index.docker.io/v1/ \\
-                                    --docker-username=%DOCKER_USERNAME% \\
-                                    --docker-password=%DOCKER_PASSWORD% \\
-                                    --namespace application-services \\
-                                    --dry-run=client -o yaml | kubectl apply -f -
+                                kubectl create secret docker-registry dockerhub-credentials --docker-server=https://index.docker.io/v1/ --docker-username=%DOCKER_USERNAME% --docker-password=%DOCKER_PASSWORD% --namespace application-services --dry-run=client -o yaml | kubectl apply -f -
                             """
                         }
+                        
+                        // Update image tag in deployment files
+                        bat """
+                            if exist k8s\\base\\deployment.yaml (
+                                powershell -Command "(Get-Content k8s\\base\\deployment.yaml) -replace 'IMAGE_TAG_PLACEHOLDER', '${BUILD_NUMBER}' -replace 'DOCKER_REGISTRY_PLACEHOLDER', '${DOCKER_REGISTRY}' -replace 'IMAGE_NAME_PLACEHOLDER', '${IMAGE_NAME}' | Set-Content k8s\\base\\deployment.yaml"
+                            )
+                        """
                         
                         bat """
                             kubectl apply -f k8s/base/deployment.yaml -n application-services
                             kubectl apply -f k8s/base/service.yaml -n application-services
-                            kubectl apply -f k8s/base/ingress.yaml -n application-services
+                        """
+                        
+                        // Apply ingress only if file exists
+                        bat """
+                            if exist k8s\\base\\ingress.yaml (
+                                kubectl apply -f k8s/base/ingress.yaml -n application-services
+                            ) else (
+                                echo "Ingress file not found, skipping ingress deployment"
+                            )
                         """
                         
                         bat """
@@ -383,15 +481,37 @@ pipeline {
                 script {
                     echo "Getting Load Balancer URL..."
                     try {
-                        def lbHostname = bat(
-                            script: 'kubectl get ingress -n application-services -o jsonpath="{.items[0].status.loadBalancer.ingress[0].hostname}"',
-                            returnStdout: true
-                        ).trim()
+                        // First try to get ingress hostname
+                        def lbHostname = ""
+                        try {
+                            lbHostname = bat(
+                                script: 'kubectl get ingress -n application-services -o jsonpath="{.items[0].status.loadBalancer.ingress[0].hostname}" 2>nul',
+                                returnStdout: true
+                            ).trim()
+                        } catch (Exception e) {
+                            echo "No ingress found, trying to get service LoadBalancer..."
+                        }
                         
-                        env.APPLICATION_URL = "http://${lbHostname}"
-                        echo "Application is available at: ${env.APPLICATION_URL}"
+                        // If no ingress, try to get service LoadBalancer
+                        if (!lbHostname) {
+                            try {
+                                lbHostname = bat(
+                                    script: 'kubectl get service -n application-services -o jsonpath="{.items[0].status.loadBalancer.ingress[0].hostname}" 2>nul',
+                                    returnStdout: true
+                                ).trim()
+                            } catch (Exception e) {
+                                echo "No LoadBalancer service found"
+                            }
+                        }
+                        
+                        if (lbHostname && lbHostname != "") {
+                            env.EKS_APPLICATION_URL = "http://${lbHostname}"
+                            echo "EKS Application is available at: ${env.EKS_APPLICATION_URL}"
+                        } else {
+                            echo "LoadBalancer URL not available yet. You can check later with: kubectl get ingress -n application-services"
+                        }
                     } catch (Exception e) {
-                        error "Failed to get Load Balancer URL: ${e.message}"
+                        echo "Could not retrieve Load Balancer URL: ${e.message}"
                     }
                 }
             }
@@ -401,29 +521,43 @@ pipeline {
     post {
         success {
             echo """
-                Pipeline completed successfully!
-                Application is available at: ${env.APPLICATION_URL}
+                🎉 Pipeline completed successfully!
+                
+                📍 Deployment Information:
+                ========================
+                EC2 Application URL: ${env.APPLICATION_URL}
                 EKS Cluster Name: ${EKS_CLUSTER_NAME}
+                Docker Image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
+                
+                📝 Next Steps:
+                =============
+                1. Access your application at: ${env.APPLICATION_URL}
+                2. Monitor EKS deployment: kubectl get pods -n application-services
+                3. Check EKS services: kubectl get svc -n application-services
+                4. View logs: kubectl logs -l app=tenant-user-service -n application-services
             """
         }
 
         failure {
             script {
-                echo "Pipeline failed! Cleaning up resources..."
+                echo "❌ Pipeline failed! Cleaning up resources..."
                 try {
+                    // Cleanup EKS cluster
                     bat """
-                        eksctl get cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} && (
-                            eksctl delete cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION}
-                        ) || echo "Cluster does not exist, skipping deletion"
+                        eksctl get cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} >nul 2>&1 && (
+                            echo "Deleting EKS cluster..."
+                            eksctl delete cluster --name ${EKS_CLUSTER_NAME} --region ${AWS_DEFAULT_REGION} --wait
+                        ) || echo "EKS cluster does not exist, skipping deletion"
                     """
 
+                    // Cleanup Terraform resources
                     dir('infrastructure/terraform') {
                         if (fileExists('terraform.tfstate')) {
-                            bat 'terraform destroy -auto-approve'
+                            bat 'terraform destroy -auto-approve -var="key_name=%KEY_NAME%"'
                         }
                     }
                 } catch (Exception e) {
-                    echo "Warning: Cleanup during failure encountered issues: ${e.message}"
+                    echo "⚠️ Warning: Cleanup during failure encountered issues: ${e.message}"
                 }
             }
         }
@@ -431,27 +565,23 @@ pipeline {
         always {
             script {
                 try {
+                    // Clean up key files
                     bat """
                         if exist %KEY_NAME%.pem (
-                            echo Deleting key file...
+                            echo Deleting key file: %KEY_NAME%.pem
                             del /f %KEY_NAME%.pem
                         )
                     """
 
-                    bat """
-                        if exist application-services-key-%BUILD_NUMBER%.pem (
-                            echo Deleting key file...
-                            del /f application-services-key-%BUILD_NUMBER%.pem
-                        )
-                    """
+                    // Clean up Docker resources
+                    bat "docker system prune -f || echo 'Docker cleanup completed'"
 
-                    bat "docker system prune -f"
-
+                    // Clean up workspace with retries
                     retry(3) {
                         cleanWs(cleanWhenFailure: true, deleteDirs: true)
                     }
                 } catch (Exception e) {
-                    echo "Warning: Cleanup failed: ${e.message}"
+                    echo "⚠️ Warning: Final cleanup failed: ${e.message}"
                 }
             }
         }
