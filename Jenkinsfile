@@ -31,6 +31,10 @@ pipeline {
         POSTGRES_PASSWORD = credentials('postgres-password')
 
         PYTHONPATH = "${WORKSPACE}/services/tenant_user-service/src"
+        
+        // Helm installation path
+        HELM_HOME = "${WORKSPACE}\\helm"
+        PATH = "${env.PATH};${WORKSPACE}\\helm"
     }
 
     stages {
@@ -41,6 +45,45 @@ pipeline {
                     echo "Cloning repository..."
                     git branch: 'main',
                         url: "${env.GIT_REPO}"
+                }
+            }
+        }
+
+        stage('Install Helm') {
+            steps {
+                script {
+                    echo "Installing Helm..."
+                    bat '''
+                        if not exist helm mkdir helm
+                        cd helm
+                        
+                        REM Check if helm is already installed in workspace
+                        if exist helm.exe (
+                            echo "Helm found in workspace"
+                            helm.exe version
+                        ) else (
+                            echo "Downloading and installing Helm v3.12.0..."
+                            
+                            REM Download with retry logic
+                            for /L %%i in (1,1,3) do (
+                                curl -LO https://get.helm.sh/helm-v3.12.0-windows-amd64.zip && goto :extract || (
+                                    echo "Download attempt %%i failed, retrying..."
+                                    timeout /t 5 /nobreak >nul
+                                )
+                            )
+                            echo "Failed to download Helm after 3 attempts" && exit 1
+                            
+                            :extract
+                            echo "Extracting Helm..."
+                            tar -xf helm-v3.12.0-windows-amd64.zip
+                            move windows-amd64\\helm.exe .\\
+                            del helm-v3.12.0-windows-amd64.zip
+                            rmdir /s /q windows-amd64
+                            
+                            echo "Helm installed successfully"
+                            helm.exe version
+                        )
+                    '''
                 }
             }
         }
@@ -418,13 +461,15 @@ fi
                             eksctl create iamserviceaccount --cluster=${EKS_CLUSTER_NAME} --namespace=kube-system --name=aws-load-balancer-controller --role-name AmazonEKSLoadBalancerControllerRole --attach-policy-arn=arn:aws:iam::aws:policy/ElasticLoadBalancingFullAccess --approve --region=${AWS_DEFAULT_REGION}
                         """
                         
+                        // Install AWS Load Balancer Controller using Helm
                         bat """
                             helm repo add eks https://aws.github.io/eks-charts
                             helm repo update
                             helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system --set clusterName=${EKS_CLUSTER_NAME} --set serviceAccount.create=false --set serviceAccount.name=aws-load-balancer-controller
                         """
                     } catch (Exception e) {
-                        error "Failed to create EKS cluster: ${e.message}"
+                        echo "Warning: Failed to install AWS Load Balancer Controller with Helm: ${e.message}"
+                        echo "Proceeding without Load Balancer Controller - you can install it manually later"
                     }
                 }
             }
