@@ -374,30 +374,7 @@ fi
                     echo "Verifying application is running..."
                     retry(3) {
                         bat """
-                            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=nul -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "
-                                echo 'Checking if container is running...'
-                                sudo docker ps | grep app-container || (echo 'Container not running' && exit 1)
-                                
-                                echo 'Waiting for application to be ready...'
-                                sleep 15
-                                
-                                echo 'Testing connection to application...'
-                                HTTP_CODE=\$(curl -s -o /dev/null -w '%%{http_code}' http://localhost:3000/ || echo '000')
-                                echo 'HTTP response code: '\$HTTP_CODE
-                                
-                                if [ \"\$HTTP_CODE\" = '000' ]; then
-                                    echo 'Application not responding'
-                                    sudo docker logs app-container
-                                    exit 1
-                                elif [ \"\$HTTP_CODE\" -ge 200 ] && [ \"\$HTTP_CODE\" -lt 500 ]; then
-                                    echo 'Application is responding successfully'
-                                    exit 0
-                                else
-                                    echo 'Application returned HTTP code: '\$HTTP_CODE
-                                    sudo docker logs app-container
-                                    exit 1
-                                fi
-                            "
+                            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=nul -i %KEY_NAME%.pem ubuntu@%EC2_PUBLIC_IP% "sudo docker ps | grep app-container && sleep 10 && curl -s http://localhost:3000/ > /dev/null && echo 'Application is healthy' || (echo 'Health check failed' && sudo docker logs app-container && exit 1)"
                         """
                     }
                 }
