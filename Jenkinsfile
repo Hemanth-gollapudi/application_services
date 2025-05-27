@@ -480,41 +480,127 @@ fi
                 script {
                     echo "Deploying to EKS cluster..."
                     try {
-                        bat """
-                            kubectl create configmap app-config --from-literal=POSTGRES_DB=${POSTGRES_DB} --from-literal=POSTGRES_USER=${POSTGRES_USER} --from-literal=POSTGRES_PASSWORD=${POSTGRES_PASSWORD} --namespace application-services --dry-run=client -o yaml | kubectl apply -f -
-                        """
-                        
-                        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
-                            bat """
-                                kubectl create secret docker-registry dockerhub-credentials --docker-server=https://index.docker.io/v1/ --docker-username=%DOCKER_USERNAME% --docker-password=%DOCKER_PASSWORD% --namespace application-services --dry-run=client -o yaml | kubectl apply -f -
-                            """
+                        // Create configmap using secure method
+                        withCredentials([
+                            string(credentialsId: 'postgres-db-name', variable: 'DB_NAME'),
+                            string(credentialsId: 'postgres-username', variable: 'DB_USER'),
+                            string(credentialsId: 'postgres-password', variable: 'DB_PASS')
+                        ]) {
+                            bat '''
+                                kubectl create configmap app-config --from-literal=POSTGRES_DB=%DB_NAME% --from-literal=POSTGRES_USER=%DB_USER% --from-literal=POSTGRES_PASSWORD=%DB_PASS% --namespace application-services --dry-run=client -o yaml | kubectl apply -f -
+                            '''
                         }
                         
-                        // Update image tag in deployment files
+                        withCredentials([usernamePassword(credentialsId: 'dockerhub-credentials', usernameVariable: 'DOCKER_USERNAME', passwordVariable: 'DOCKER_PASSWORD')]) {
+                            bat '''
+                                kubectl create secret docker-registry dockerhub-credentials --docker-server=https://index.docker.io/v1/ --docker-username=%DOCKER_USERNAME% --docker-password=%DOCKER_PASSWORD% --namespace application-services --dry-run=client -o yaml | kubectl apply -f -
+                            '''
+                        }
+                        
+                        // Check if k8s directory exists, if not create basic manifests
+                        bat '''
+                            if not exist k8s mkdir k8s
+                            if not exist k8s\\base mkdir k8s\\base
+                        '''
+                        
+                        // Create deployment.yaml if it doesn't exist
                         bat """
-                            if exist k8s\\base\\deployment.yaml (
-                                powershell -Command "(Get-Content k8s\\base\\deployment.yaml) -replace 'IMAGE_TAG_PLACEHOLDER', '${BUILD_NUMBER}' -replace 'DOCKER_REGISTRY_PLACEHOLDER', '${DOCKER_REGISTRY}' -replace 'IMAGE_NAME_PLACEHOLDER', '${IMAGE_NAME}' | Set-Content k8s\\base\\deployment.yaml"
+                            if not exist k8s\\base\\deployment.yaml (
+                                echo Creating deployment.yaml...
+                                echo apiVersion: apps/v1 > k8s\\base\\deployment.yaml
+                                echo kind: Deployment >> k8s\\base\\deployment.yaml
+                                echo metadata: >> k8s\\base\\deployment.yaml
+                                echo   name: tenant-user-service >> k8s\\base\\deployment.yaml
+                                echo   namespace: application-services >> k8s\\base\\deployment.yaml
+                                echo spec: >> k8s\\base\\deployment.yaml
+                                echo   replicas: 2 >> k8s\\base\\deployment.yaml
+                                echo   selector: >> k8s\\base\\deployment.yaml
+                                echo     matchLabels: >> k8s\\base\\deployment.yaml
+                                echo       app: tenant-user-service >> k8s\\base\\deployment.yaml
+                                echo   template: >> k8s\\base\\deployment.yaml
+                                echo     metadata: >> k8s\\base\\deployment.yaml
+                                echo       labels: >> k8s\\base\\deployment.yaml
+                                echo         app: tenant-user-service >> k8s\\base\\deployment.yaml
+                                echo     spec: >> k8s\\base\\deployment.yaml
+                                echo       imagePullSecrets: >> k8s\\base\\deployment.yaml
+                                echo       - name: dockerhub-credentials >> k8s\\base\\deployment.yaml
+                                echo       containers: >> k8s\\base\\deployment.yaml
+                                echo       - name: app >> k8s\\base\\deployment.yaml
+                                echo         image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} >> k8s\\base\\deployment.yaml
+                                echo         ports: >> k8s\\base\\deployment.yaml
+                                echo         - containerPort: 8000 >> k8s\\base\\deployment.yaml
+                                echo         envFrom: >> k8s\\base\\deployment.yaml
+                                echo         - configMapRef: >> k8s\\base\\deployment.yaml
+                                echo             name: app-config >> k8s\\base\\deployment.yaml
+                            ) else (
+                                echo Updating existing deployment.yaml...
+                                powershell -Command "(Get-Content k8s\\base\\deployment.yaml) -replace 'IMAGE_TAG_PLACEHOLDER', '${BUILD_NUMBER}' -replace 'DOCKER_REGISTRY_PLACEHOLDER', '${DOCKER_REGISTRY}' -replace 'IMAGE_NAME_PLACEHOLDER', '${IMAGE_NAME}' -replace 'namespace: platform', 'namespace: application-services' | Set-Content k8s\\base\\deployment.yaml"
                             )
                         """
                         
-                        bat """
+                        // Create service.yaml if it doesn't exist
+                        bat '''
+                            if not exist k8s\\base\\service.yaml (
+                                echo Creating service.yaml...
+                                echo apiVersion: v1 > k8s\\base\\service.yaml
+                                echo kind: Service >> k8s\\base\\service.yaml
+                                echo metadata: >> k8s\\base\\service.yaml
+                                echo   name: tenant-user-service >> k8s\\base\\service.yaml
+                                echo   namespace: application-services >> k8s\\base\\service.yaml
+                                echo   annotations: >> k8s\\base\\service.yaml
+                                echo     service.beta.kubernetes.io/aws-load-balancer-type: nlb >> k8s\\base\\service.yaml
+                                echo spec: >> k8s\\base\\service.yaml
+                                echo   type: LoadBalancer >> k8s\\base\\service.yaml
+                                echo   ports: >> k8s\\base\\service.yaml
+                                echo   - port: 80 >> k8s\\base\\service.yaml
+                                echo     targetPort: 8000 >> k8s\\base\\service.yaml
+                                echo     protocol: TCP >> k8s\\base\\service.yaml
+                                echo   selector: >> k8s\\base\\service.yaml
+                                echo     app: tenant-user-service >> k8s\\base\\service.yaml
+                            )
+                        '''
+                        
+                        // Apply the manifests
+                        bat '''
+                            echo Applying deployment...
                             kubectl apply -f k8s/base/deployment.yaml -n application-services
+                            
+                            echo Applying service...
                             kubectl apply -f k8s/base/service.yaml -n application-services
-                        """
+                        '''
                         
                         // Apply ingress only if file exists
-                        bat """
+                        bat '''
                             if exist k8s\\base\\ingress.yaml (
+                                echo Applying ingress...
                                 kubectl apply -f k8s/base/ingress.yaml -n application-services
                             ) else (
                                 echo "Ingress file not found, skipping ingress deployment"
                             )
-                        """
+                        '''
                         
-                        bat """
+                        // Wait for deployment rollout
+                        bat '''
+                            echo Waiting for deployment rollout...
                             kubectl rollout status deployment/tenant-user-service -n application-services --timeout=300s
-                        """
+                        '''
+                        
+                        // Verify deployment
+                        bat '''
+                            echo Verifying deployment...
+                            kubectl get pods -n application-services
+                            kubectl get services -n application-services
+                        '''
+                        
                     } catch (Exception e) {
+                        // Show debug information before failing
+                        bat '''
+                            echo "=== DEBUG INFORMATION ==="
+                            kubectl get namespaces
+                            kubectl get pods -n application-services || echo "No pods found"
+                            kubectl get services -n application-services || echo "No services found"
+                            kubectl describe deployment tenant-user-service -n application-services || echo "No deployment found"
+                        '''
                         error "Failed to deploy to EKS: ${e.message}"
                     }
                 }
