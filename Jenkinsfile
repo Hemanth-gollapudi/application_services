@@ -497,172 +497,74 @@ fi
                             '''
                         }
                         
-                        // Check if k8s directory exists, if not create basic manifests
-                        bat '''
-                            if not exist k8s mkdir k8s
-                            if not exist k8s\\base mkdir k8s\\base
-                        '''
-                        
-                        // Create deployment.yaml with consistent naming
+                        // Update the image tag in your existing deployment files
+                        // Assuming your k8s files are in the 'k8s' or 'kubernetes' directory in your Git repo
                         bat """
-                            echo Creating deployment.yaml...
-                            (
-                                echo apiVersion: apps/v1
-                                echo kind: Deployment
-                                echo metadata:
-                                echo   name: tenant-user-service
-                                echo   namespace: application-services
-                                echo   labels:
-                                echo     app: tenant-user-service
-                                echo spec:
-                                echo   replicas: 2
-                                echo   selector:
-                                echo     matchLabels:
-                                echo       app: tenant-user-service
-                                echo   template:
-                                echo     metadata:
-                                echo       labels:
-                                echo         app: tenant-user-service
-                                echo     spec:
-                                echo       imagePullSecrets:
-                                echo       - name: dockerhub-credentials
-                                echo       containers:
-                                echo       - name: app
-                                echo         image: ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER}
-                                echo         ports:
-                                echo         - containerPort: 8000
-                                echo         envFrom:
-                                echo         - configMapRef:
-                                echo             name: app-config
-                                echo         resources:
-                                echo           requests:
-                                echo             memory: "256Mi"
-                                echo             cpu: "250m"
-                                echo           limits:
-                                echo             memory: "512Mi"
-                                echo             cpu: "500m"
-                                echo         readinessProbe:
-                                echo           httpGet:
-                                echo             path: /
-                                echo             port: 8000
-                                echo           initialDelaySeconds: 30
-                                echo           periodSeconds: 10
-                                echo         livenessProbe:
-                                echo           httpGet:
-                                echo             path: /
-                                echo             port: 8000
-                                echo           initialDelaySeconds: 60
-                                echo           periodSeconds: 30
-                            ) > k8s\\base\\deployment.yaml
-                        """
-                        
-                        // Create service.yaml with consistent naming
-                        bat '''
-                            echo Creating service.yaml...
-                            (
-                                echo apiVersion: v1
-                                echo kind: Service
-                                echo metadata:
-                                echo   name: tenant-user-service
-                                echo   namespace: application-services
-                                echo   labels:
-                                echo     app: tenant-user-service
-                                echo   annotations:
-                                echo     service.beta.kubernetes.io/aws-load-balancer-type: nlb
-                                echo     service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
-                                echo spec:
-                                echo   type: LoadBalancer
-                                echo   ports:
-                                echo   - name: http
-                                echo     port: 80
-                                echo     targetPort: 8000
-                                echo     protocol: TCP
-                                echo   selector:
-                                echo     app: tenant-user-service
-                            ) > k8s\\base\\service.yaml
-                        '''
-                        
-                        // Verify Docker image exists before deploying
-                        bat """
-                            echo Verifying Docker image exists...
-                            docker pull ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} || (
-                                echo "ERROR: Docker image ${DOCKER_REGISTRY}/${IMAGE_NAME}:${BUILD_NUMBER} not found!"
+                            echo "Updating image tag in deployment files..."
+                            
+                            REM Check if k8s directory exists in the repo
+                            if exist k8s\\deployment.yaml (
+                                echo "Found k8s/deployment.yaml, updating image tag..."
+                                powershell -Command "(Get-Content k8s\\deployment.yaml) -replace 'hemanthkumar21/application_services_app:.*', 'hemanthkumar21/application_services_app:${BUILD_NUMBER}' | Set-Content k8s\\deployment.yaml"
+                            ) else if exist kubernetes\\deployment.yaml (
+                                echo "Found kubernetes/deployment.yaml, updating image tag..."
+                                powershell -Command "(Get-Content kubernetes\\deployment.yaml) -replace 'hemanthkumar21/application_services_app:.*', 'hemanthkumar21/application_services_app:${BUILD_NUMBER}' | Set-Content kubernetes\\deployment.yaml"
+                            ) else if exist k8s\\base\\deployment.yaml (
+                                echo "Found k8s/base/deployment.yaml, updating image tag..."
+                                powershell -Command "(Get-Content k8s\\base\\deployment.yaml) -replace 'hemanthkumar21/application_services_app:.*', 'hemanthkumar21/application_services_app:${BUILD_NUMBER}' | Set-Content k8s\\base\\deployment.yaml"
+                            ) else (
+                                echo "No deployment.yaml found in expected locations (k8s/, kubernetes/, k8s/base/)"
+                                echo "Please ensure your k8s manifests are in one of these directories in your Git repo"
                                 exit 1
                             )
                         """
                         
-                        // Apply the manifests
+                        // Apply the manifests from your Git repository
                         bat '''
-                            echo Applying deployment...
-                            kubectl apply -f k8s/base/deployment.yaml -n application-services
+                            echo "Applying Kubernetes manifests from Git repository..."
                             
-                            echo Applying service...
-                            kubectl apply -f k8s/base/service.yaml -n application-services
-                        '''
-                        
-                        // Apply ingress only if file exists
-                        bat '''
-                            if exist k8s\\base\\ingress.yaml (
-                                echo Applying ingress...
-                                kubectl apply -f k8s/base/ingress.yaml -n application-services
+                            REM Apply manifests based on directory structure
+                            if exist k8s\\deployment.yaml (
+                                echo "Applying from k8s/ directory..."
+                                kubectl apply -f k8s/ -n application-services --recursive
+                            ) else if exist kubernetes\\deployment.yaml (
+                                echo "Applying from kubernetes/ directory..."
+                                kubectl apply -f kubernetes/ -n application-services --recursive
+                            ) else if exist k8s\\base\\deployment.yaml (
+                                echo "Applying from k8s/base/ directory..."
+                                kubectl apply -f k8s/base/ -n application-services --recursive
                             ) else (
-                                echo "Ingress file not found, skipping ingress deployment"
+                                echo "ERROR: No Kubernetes manifests found!"
+                                echo "Expected locations:"
+                                echo "  - k8s/"
+                                echo "  - kubernetes/"
+                                echo "  - k8s/base/"
+                                dir /b
+                                exit 1
                             )
                         '''
                         
-                        // Wait for deployment rollout with correct deployment name
+                        // Wait for deployment rollout
                         bat '''
-                            echo Waiting for deployment rollout...
+                            echo "Waiting for deployment rollout..."
                             kubectl rollout status deployment/tenant-user-service -n application-services --timeout=600s
                         '''
                         
                         // Verify deployment
                         bat '''
-                            echo Verifying deployment...
+                            echo "Verifying deployment..."
                             kubectl get pods -n application-services -l app=tenant-user-service
                             kubectl get services -n application-services
                             kubectl describe deployment tenant-user-service -n application-services
                         '''
                         
-                        // Check pod logs for any issues
-                        bat '''
-                            echo Checking pod logs...
-                            kubectl logs -l app=tenant-user-service -n application-services --tail=50 || echo "No logs available yet"
-                        '''
-                        
                     } catch (Exception e) {
-                        // Show comprehensive debug information before failing
+                        // Debug information
                         bat '''
-                            echo "=== COMPREHENSIVE DEBUG INFORMATION ==="
-                            echo "=== Namespaces ==="
-                            kubectl get namespaces
-                            
-                            echo "=== Pods in application-services namespace ==="
+                            echo "=== KUBERNETES DEBUG INFORMATION ==="
                             kubectl get pods -n application-services -o wide || echo "No pods found"
-                            
-                            echo "=== Services in application-services namespace ==="
-                            kubectl get services -n application-services || echo "No services found"
-                            
-                            echo "=== Deployments in application-services namespace ==="
-                            kubectl get deployments -n application-services || echo "No deployments found"
-                            
-                            echo "=== ConfigMaps in application-services namespace ==="
-                            kubectl get configmaps -n application-services || echo "No configmaps found"
-                            
-                            echo "=== Secrets in application-services namespace ==="
-                            kubectl get secrets -n application-services || echo "No secrets found"
-                            
-                            echo "=== Describe deployment (if exists) ==="
-                            kubectl describe deployment tenant-user-service -n application-services || echo "No deployment found"
-                            
-                            echo "=== Describe pods (if exist) ==="
+                            kubectl logs -l app=tenant-user-service -n application-services --tail=50 || echo "No logs available"
                             kubectl describe pods -l app=tenant-user-service -n application-services || echo "No pods found"
-                            
-                            echo "=== Pod logs (if available) ==="
-                            kubectl logs -l app=tenant-user-service -n application-services --tail=100 || echo "No logs available"
-                            
-                            echo "=== Events in application-services namespace ==="
-                            kubectl get events -n application-services --sort-by='.lastTimestamp' || echo "No events found"
                         '''
                         error "Failed to deploy to EKS: ${e.message}"
                     }
