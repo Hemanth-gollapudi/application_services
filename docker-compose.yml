@@ -1,3 +1,4 @@
+# Save this as docker-compose.yml (or similar)
 services:
   postgres-tenant:
     image: postgres:15
@@ -11,7 +12,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5435:5432"
+      - "5434:5432" # Adopted port 5434 from the second file
     healthcheck:
       test:
         ["CMD", "pg_isready", "-U", "${POSTGRES_USER}", "-d", "${POSTGRES_DB}"]
@@ -31,12 +32,12 @@ services:
       - keycloak_data:/opt/keycloak/data
 
   app:
-    image: ${DOCKER_REGISTRY:-hemanthkumar21}/${IMAGE_NAME:-application_services_app}:${BUILD_NUMBER}
+    image: ${DOCKER_REGISTRY:-hemanthkumar21}/${IMAGE_NAME:-application_services_app}:${BUILD_NUMBER} # Kept flexible image name from the first file
     build:
-      context: .
-      dockerfile: services/tenant_user-service/Dockerfile
+      context: ./services/tenant_user-service # Adopted subdir context from the second file
+      dockerfile: Dockerfile # Relative path to Dockerfile within the new context
       args:
-        - BUILD_VERSION=${BUILD_NUMBER}
+        - BUILD_VERSION=${BUILD_NUMBER} # Kept build args from the first file
     command: uvicorn tenant_user_service.main:app --host 0.0.0.0 --reload
     env_file:
       - ./.env
@@ -46,21 +47,21 @@ services:
       - "8009:8000"
     depends_on:
       - postgres-tenant
-      - keycloak-tenant
+      - keycloak-tenant # Kept explicit dependencies from the first file
 
   migrate:
-    image: ${DOCKER_REGISTRY:-hemanthkumar21}/${IMAGE_NAME:-application_services_app}:${BUILD_NUMBER}
+    # Removed explicit 'image' as it's built from scratch for the job, similar to the second file's behavior
     build:
-      context: .
-      dockerfile: services/tenant_user-service/Dockerfile
+      context: ./services/tenant_user-service # Adopted subdir context from the second file
+      dockerfile: Dockerfile # Relative path to Dockerfile within the new context
       args:
-        - BUILD_VERSION=${BUILD_NUMBER}
+        - BUILD_VERSION=${BUILD_NUMBER} # Kept build args from the first file
     command: alembic -c /app/alembic.ini upgrade head
     env_file:
       - ./.env
     depends_on:
       postgres-tenant:
-        condition: service_healthy
+        condition: service_healthy # Kept the health check dependency
 
 volumes:
   postgres_data:
