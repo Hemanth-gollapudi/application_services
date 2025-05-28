@@ -35,7 +35,7 @@ services:
     image: ${DOCKER_REGISTRY:-hemanthkumar21}/${IMAGE_NAME:-application_services_app}:${BUILD_NUMBER} # Kept flexible image name from the first file
     build:
       context: ./services/tenant_user-service # Adopted subdir context from the second file
-      dockerfile: Dockerfile # Relative path to Dockerfile within the new context
+      dockerfile: services/tenant_user-service/Dockerfile # Relative path to Dockerfile within the new context
       args:
         - BUILD_VERSION=${BUILD_NUMBER} # Kept build args from the first file
     command: uvicorn tenant_user_service.main:app --host 0.0.0.0 --reload
