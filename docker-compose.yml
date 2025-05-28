@@ -50,7 +50,7 @@ services:
       - keycloak-tenant # Kept explicit dependencies from the first file
 
   migrate:
-    # Removed explicit 'image' as it's built from scratch for the job, similar to the second file's behavior
+    image: ${DOCKER_REGISTRY:-hemanthkumar21}/${IMAGE_NAME:-application_services_app}:${BUILD_NUMBER}
     build:
       context: .
       dockerfile: services/tenant_user-service/Dockerfile
