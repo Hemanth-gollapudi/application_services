@@ -52,10 +52,10 @@ services:
   migrate:
     # Removed explicit 'image' as it's built from scratch for the job, similar to the second file's behavior
     build:
-      context: ./services/tenant_user-service # Adopted subdir context from the second file
-      dockerfile: Dockerfile # Relative path to Dockerfile within the new context
+      context: .
+      dockerfile: services/tenant_user-service/Dockerfile
       args:
-        - BUILD_VERSION=${BUILD_NUMBER} # Kept build args from the first file
+        - BUILD_VERSION=${BUILD_NUMBER}
     command: alembic -c /app/alembic.ini upgrade head
     env_file:
       - ./.env
