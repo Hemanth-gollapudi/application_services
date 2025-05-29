@@ -34,10 +34,7 @@ pipeline {
         
         // Helm installation path
         HELM_HOME = "${WORKSPACE}\\helm"
-        PATH = "${env.PATH};${WORKSPACE}\\helm"
-
         PATH = "${env.PATH};${WORKSPACE}\\helm;${WORKSPACE}\\kustomize"
-
     }
 
     stages {
