@@ -35,6 +35,9 @@ pipeline {
         // Helm installation path
         HELM_HOME = "${WORKSPACE}\\helm"
         PATH = "${env.PATH};${WORKSPACE}\\helm"
+
+        PATH = "${env.PATH};${WORKSPACE}\\helm;${WORKSPACE}\\kustomize"
+
     }
 
     stages {
@@ -82,6 +85,43 @@ pipeline {
                             
                             echo "Helm installed successfully"
                             helm.exe version
+                        )
+                    '''
+                }
+            }
+        }
+
+        stage('Install Kustomize') {
+            steps {
+                script {
+                    echo "Installing Kustomize..."
+                    bat '''
+                        if not exist kustomize mkdir kustomize
+                        cd kustomize
+                        
+                        REM Check if kustomize is already installed in workspace
+                        if exist kustomize.exe (
+                            echo "Kustomize found in workspace"
+                            kustomize.exe version
+                        ) else (
+                            echo "Downloading and installing Kustomize..."
+                            
+                            REM Download with retry logic
+                            for /L %%i in (1,1,3) do (
+                                curl -LO https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.0.3/kustomize_v5.0.3_windows_amd64.tar.gz && goto :extract || (
+                                    echo "Download attempt %%i failed, retrying..."
+                                    timeout /t 5 /nobreak >nul
+                                )
+                            )
+                            echo "Failed to download Kustomize after 3 attempts" && exit 1
+                            
+                            :extract
+                            echo "Extracting Kustomize..."
+                            tar -xf kustomize_v5.0.3_windows_amd64.tar.gz
+                            del kustomize_v5.0.3_windows_amd64.tar.gz
+                            
+                            echo "Kustomize installed successfully"
+                            kustomize.exe version
                         )
                     '''
                 }
@@ -531,8 +571,10 @@ fi
                                 echo "Applying from kubernetes/ directory..."
                                 kubectl apply -f kubernetes/ -n application-services --recursive
                             ) else if exist k8s\\base\\deployment.yaml (
-                                echo "Applying from k8s/base/ directory..."
-                                kubectl apply -f k8s/base/ -n application-services --recursive
+                                echo "Applying from k8s/base/ directory using Kustomize..."
+                                cd k8s/base
+                                kustomize build . | kubectl apply -f - -n application-services
+                                cd ../..
                             ) else (
                                 echo "ERROR: No Kubernetes manifests found!"
                                 echo "Expected locations:"
