@@ -1,23 +1,59 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: application-services-app
-  namespace: platform
+  name: tenant-user-service
+  namespace: application-services  # Changed from platform to application-services
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: application-services-app
+      app: tenant-user-service  # Changed to match what Jenkins expects
   template:
     metadata:
       labels:
-        app: application-services-app
+        app: tenant-user-service  # Changed to match what Jenkins expects
     spec:
+      imagePullSecrets:
+        - name: dockerhub-credentials  # Add image pull secret
       containers:
-        - name: application-services-app
-          image: hemanthkumar21/application_services_app:${BUILD_NUMBER}
+        - name: tenant-user-service
+          image: hemanthkumar21/application_services_app:latest  # Will be replaced by Jenkins
           ports:
-            - containerPort: 8009
+            - containerPort: 8000  # Changed from 8009 to 8000 (your app runs on 8000)
           env:
             - name: ENV
               value: "production"
+            - name: POSTGRES_DB
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: POSTGRES_DB
+            - name: POSTGRES_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: app-config
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
